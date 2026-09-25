@@ -1,0 +1,797 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/planazo-team/planazo-infra/contracts/events.schema.json",
+  "title": "Sobre de evento de dominio de Planazo",
+  "description": "Lo que booking, promo y game publican al canal Redis `planazo.events`. NO lleva `seq`: ese campo lo asigna `realtime` al persistir el evento en su tabla `events` (BIGSERIAL) y solo aparece en lo que el cliente recibe como `RtEvent { seq, id, type, payload, topics, at }`. Los payloads siguen exactamente lo que el frontend consume en sus `useRtEvent<T>` (planazo-frontend/frontend/src/lib/types.ts y las páginas que lo usan).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "topics",
+    "payload",
+    "at"
+  ],
+  "properties": {
+    "id": {
+      "description": "UUID único del evento. Permite al cliente descartar duplicados en una reentrega (RT-2).",
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "type": {
+      "description": "EventType de types.ts más los tres que emiten los servicios pero el frontend aún no consume.",
+      "type": "string",
+      "enum": [
+        "PLACE.UPDATE",
+        "INV.UPDATE",
+        "RESERVE.OK",
+        "RESERVE.CONFLICT",
+        "PROMO.PUSH",
+        "PROMO.WON",
+        "PROMO.REJECTED",
+        "PROMO.EXPIRED",
+        "ROOM.JOIN",
+        "SNAKE.SCORE",
+        "SNAKE.DEATH",
+        "ROUND.END"
+      ]
+    },
+    "topics": {
+      "description": "A quién se enruta: zone:zona-g, place:p7, user:u1, room:ABCD. Un evento puede ir a varios.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(zone|place|user|room):"
+      }
+    },
+    "payload": {
+      "type": "object"
+    },
+    "at": {
+      "description": "Momento de emisión, epoch en milisegundos.",
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "PLACE.UPDATE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/PlaceUpdatePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "INV.UPDATE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/InvUpdatePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "RESERVE.OK"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/ReserveOkPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "RESERVE.CONFLICT"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/ReserveConflictPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "PROMO.PUSH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/PromoPushPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "PROMO.WON"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/PromoWonPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "PROMO.REJECTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/PromoRejectedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "PROMO.EXPIRED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/PromoExpiredPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "ROOM.JOIN"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/RoomJoinPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "SNAKE.SCORE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/SnakeScorePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "SNAKE.DEATH"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/SnakeDeathPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "ROUND.END"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/RoundEndPayload"
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "Zone": {
+      "type": "string",
+      "enum": [
+        "zona-g",
+        "zona-t"
+      ]
+    },
+    "EpochMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "Slot": {
+      "description": "types.ts → Slot. `version` es la clave del lock optimista (CC-3).",
+      "type": "object",
+      "required": [
+        "id",
+        "placeId",
+        "startsAt",
+        "capacity",
+        "taken",
+        "version"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "placeId": {
+          "type": "string"
+        },
+        "startsAt": {
+          "type": "string"
+        },
+        "capacity": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "taken": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "Reservation": {
+      "description": "types.ts → Reservation.",
+      "type": "object",
+      "required": [
+        "id",
+        "slotId",
+        "placeId",
+        "placeName",
+        "startsAt",
+        "people",
+        "code",
+        "userId",
+        "userName",
+        "createdAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "slotId": {
+          "type": "string"
+        },
+        "placeId": {
+          "type": "string"
+        },
+        "placeName": {
+          "type": "string"
+        },
+        "startsAt": {
+          "type": "string"
+        },
+        "people": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "code": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "userName": {
+          "type": "string"
+        },
+        "createdAt": {
+          "$ref": "#/definitions/EpochMs"
+        }
+      }
+    },
+    "Promo": {
+      "description": "types.ts → Promo.",
+      "type": "object",
+      "required": [
+        "id",
+        "placeId",
+        "placeName",
+        "zone",
+        "title",
+        "discount",
+        "stock",
+        "initialStock",
+        "expiresAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "placeId": {
+          "type": "string"
+        },
+        "placeName": {
+          "type": "string"
+        },
+        "zone": {
+          "$ref": "#/definitions/Zone"
+        },
+        "title": {
+          "type": "string"
+        },
+        "discount": {
+          "type": "string"
+        },
+        "stock": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "initialStock": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expiresAt": {
+          "$ref": "#/definitions/EpochMs"
+        }
+      }
+    },
+    "Coupon": {
+      "description": "types.ts → Coupon.",
+      "type": "object",
+      "required": [
+        "id",
+        "promoId",
+        "code",
+        "title",
+        "discount",
+        "placeName",
+        "claimedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "promoId": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "discount": {
+          "type": "string"
+        },
+        "placeName": {
+          "type": "string"
+        },
+        "claimedAt": {
+          "$ref": "#/definitions/EpochMs"
+        }
+      }
+    },
+    "GamePlayer": {
+      "description": "types.ts → GamePlayer.",
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "color",
+        "alive",
+        "score"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "alive": {
+          "type": "boolean"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "isBot": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Room": {
+      "description": "types.ts → Room.",
+      "type": "object",
+      "required": [
+        "code",
+        "hostId",
+        "status",
+        "players"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "hostId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "lobby",
+            "playing",
+            "finished"
+          ]
+        },
+        "players": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/GamePlayer"
+          }
+        }
+      }
+    },
+    "LeaderEntry": {
+      "description": "types.ts → LeaderEntry.",
+      "type": "object",
+      "required": [
+        "playerId",
+        "name",
+        "score"
+      ],
+      "properties": {
+        "playerId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "PlaceUpdatePayload": {
+      "description": "types.ts → PlaceUpdatePayload. booking → zone:<zona>, place:<id>. El mapa actualiza `freeSeats` (RT-1).",
+      "type": "object",
+      "required": [
+        "placeId",
+        "freeSeats"
+      ],
+      "properties": {
+        "placeId": {
+          "type": "string"
+        },
+        "freeSeats": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "InvUpdatePayload": {
+      "description": "types.ts → InvUpdatePayload. booking → place:<id>. La ficha y el panel reemplazan la franja completa.",
+      "type": "object",
+      "required": [
+        "placeId",
+        "slot"
+      ],
+      "properties": {
+        "placeId": {
+          "type": "string"
+        },
+        "slot": {
+          "$ref": "#/definitions/Slot"
+        }
+      }
+    },
+    "ReserveOkPayload": {
+      "description": "booking → place:<id>, user:<userId>. El frontend lo consume como `useRtEvent<Reservation>`: el payload ES la Reservation, sin envolver.",
+      "$ref": "#/definitions/Reservation"
+    },
+    "ReserveConflictPayload": {
+      "description": "booking → user:<userId>, place:<id>. Aún no lo consume el frontend; forma propuesta.",
+      "type": "object",
+      "required": [
+        "slotId",
+        "placeId",
+        "userId",
+        "code"
+      ],
+      "properties": {
+        "slotId": {
+          "type": "string"
+        },
+        "placeId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "VERSION_CONFLICT",
+            "SIN_CUPO"
+          ]
+        }
+      }
+    },
+    "PromoPushPayload": {
+      "description": "promo → zone:<zona>, place:<id>. El frontend lo consume como `useRtEvent<Promo>`: el payload ES la Promo, sin envolver.",
+      "$ref": "#/definitions/Promo"
+    },
+    "PromoWonPayload": {
+      "description": "promo → zone:<zona>, place:<id> (y user:<userId> del ganador). El frontend lee `promoId`, `stock` (restante) y `winner` (nombre). El Coupon completo lo recibe el ganador en la respuesta HTTP del claim, no aquí.",
+      "type": "object",
+      "required": [
+        "promoId",
+        "placeId",
+        "stock",
+        "winner"
+      ],
+      "properties": {
+        "promoId": {
+          "type": "string"
+        },
+        "placeId": {
+          "type": "string"
+        },
+        "stock": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "winner": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "coupon": {
+          "$ref": "#/definitions/Coupon"
+        }
+      }
+    },
+    "PromoRejectedPayload": {
+      "description": "promo → user:<userId>, place:<id>. Aún no lo consume el frontend; forma propuesta.",
+      "type": "object",
+      "required": [
+        "promoId",
+        "placeId",
+        "userId",
+        "code"
+      ],
+      "properties": {
+        "promoId": {
+          "type": "string"
+        },
+        "placeId": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string",
+          "enum": [
+            "PROMO_AGOTADA",
+            "PROMO_VENCIDA"
+          ]
+        }
+      }
+    },
+    "PromoExpiredPayload": {
+      "description": "promo → zone:<zona>, place:<id>. El frontend solo lee `promoId`.",
+      "type": "object",
+      "required": [
+        "promoId"
+      ],
+      "properties": {
+        "promoId": {
+          "type": "string"
+        },
+        "placeId": {
+          "type": "string"
+        }
+      }
+    },
+    "RoomJoinPayload": {
+      "description": "game → room:<code>. Quién entró. Así lo publica el mock del frontend; `room` completa es opcional.",
+      "type": "object",
+      "required": [
+        "code",
+        "playerId",
+        "name"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "playerId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "room": {
+          "$ref": "#/definitions/Room"
+        }
+      },
+      "additionalProperties": true
+    },
+    "SnakeScorePayload": {
+      "description": "game → room:<code>. Un jugador puntuó. Así lo publica el mock del frontend; `leaderboard` ordenado es opcional (el orden autoritativo viaja en STATE por el WS del juego).",
+      "type": "object",
+      "required": [
+        "code",
+        "playerId",
+        "name",
+        "score"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "playerId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "leaderboard": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LeaderEntry"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "SnakeDeathPayload": {
+      "description": "game → room:<code>. Aún no lo consume el frontend; forma propuesta.",
+      "type": "object",
+      "required": [
+        "code",
+        "playerId"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "playerId": {
+          "type": "string"
+        },
+        "score": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "RoundEndPayload": {
+      "description": "game → room:<code>. Con este evento game escribe el Hall of Fame.",
+      "type": "object",
+      "required": [
+        "code",
+        "leaderboard",
+        "winnerId"
+      ],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "leaderboard": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/LeaderEntry"
+          }
+        },
+        "winnerId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "RtEvent": {
+      "description": "Lo que realtime entrega al cliente en `{ type:'EVENT', event }` y `{ type:'REPLAY', events }`: el sobre más `seq`, asignado por realtime al persistir (orden global, permite RESUME).",
+      "type": "object",
+      "required": [
+        "seq",
+        "id",
+        "type",
+        "topics",
+        "payload",
+        "at"
+      ],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "$ref": "#/properties/id"
+        },
+        "type": {
+          "$ref": "#/properties/type"
+        },
+        "topics": {
+          "$ref": "#/properties/topics"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "at": {
+          "$ref": "#/definitions/EpochMs"
+        }
+      }
+    }
+  }
+}

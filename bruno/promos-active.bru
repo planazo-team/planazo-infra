@@ -1,0 +1,23 @@
+meta {
+  name: promos-active
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/api/promos?zone=zona-t
+  body: none
+  auth: bearer
+}
+
+params:query {
+  zone: zona-t
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  GET /api/promos?zone= → Promo[] activas (stock > 0 y no vencidas).
+}

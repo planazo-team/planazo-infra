@@ -1,0 +1,19 @@
+meta {
+  name: promo-claim
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/promos/{{promoId}}/claim
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  POST /api/promos/:id/claim (token de cliente) → 200 Coupon. 409 PROMO_AGOTADA cuando el stock llega a 0 (CC-1).
+}

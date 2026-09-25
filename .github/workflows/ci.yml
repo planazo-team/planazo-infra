@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    name: Validar compose, scripts, k6 y contratos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # docker compose necesita el .env que referencian los servicios del profile "app"
+      - name: Preparar .env de prueba
+        run: cp .env.example .env
+
+      - name: Validar docker-compose.yml (infra y profile app)
+        run: |
+          docker compose config -q
+          docker compose --profile app config -q
+
+      - name: Sintaxis de los scripts bash
+        run: |
+          for f in scripts/*.sh; do
+            echo "bash -n $f"
+            bash -n "$f"
+          done
+
+      - name: Sintaxis de los scripts k6
+        run: |
+          for f in k6/*.js; do
+            echo "node --check $f"
+            node --check "$f"
+          done
+
+      - name: Validar contracts/events.schema.json
+        run: npx --yes ajv-cli@5 compile -s contracts/events.schema.json

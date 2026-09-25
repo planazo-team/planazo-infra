@@ -1,0 +1,20 @@
+meta {
+  name: room-join
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{baseUrl}}/api/rooms/{{roomCode}}/join
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  POST /api/rooms/:code/join → Room. Úsalo con el token de OTRO usuario (auth-demo con u2).
+  404 SALA_NO_EXISTE · 409 SALA_EN_JUEGO.
+}

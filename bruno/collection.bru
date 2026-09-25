@@ -1,0 +1,10 @@
+docs {
+  # Planazo · colección Bruno
+  
+  1. Selecciona el entorno `local` (baseUrl = http://localhost:8080).
+  2. Corre `auth-demo`: guarda el `token` en la variable de entorno automáticamente (vars:post-response).
+     Cambia `userId` a `b1` para probar las rutas de negocio (promo-launch).
+  3. El resto de peticiones usan `Authorization: Bearer {{token}}`.
+  
+  Para Railway crea otro entorno con `baseUrl: https://<gateway>.up.railway.app`.
+}

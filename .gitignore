@@ -1,0 +1,17 @@
+# Secretos locales
+.env
+.env.*
+!.env.example
+
+# Dependencias y artefactos
+node_modules/
+*.log
+
+# Resultados de k6 (json/csv/html)
+k6-results/
+
+# Editores / SO
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

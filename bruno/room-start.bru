@@ -1,0 +1,20 @@
+meta {
+  name: room-start
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/api/rooms/{{roomCode}}/start
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  POST /api/rooms/:code/start (solo el host) → Room con status 'playing'. 409 JUGADORES_INSUFICIENTES si hay menos de dos.
+  La partida sigue por WebSocket: ws://localhost:8082/rooms/{{roomCode}}/play (ver contracts/game.md).
+}

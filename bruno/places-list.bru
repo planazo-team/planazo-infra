@@ -1,0 +1,24 @@
+meta {
+  name: places-list
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/places?zone=zona-g
+  body: none
+  auth: bearer
+}
+
+params:query {
+  zone: zona-g
+  ~category: restaurante
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  GET /api/places → Place[]. Filtros opcionales: zone (zona-g | zona-t), category.
+}

@@ -1,0 +1,24 @@
+meta {
+  name: place-detail
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/places/p1
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+vars:post-response {
+  slotId: res.body.slots[0].id
+  slotVersion: res.body.slots[0].version
+}
+
+docs {
+  GET /api/places/:id → PlaceDetail (slots, events, promos). Guarda slots[0] en {{slotId}} / {{slotVersion}} para `reserve`.
+}

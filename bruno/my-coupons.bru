@@ -1,0 +1,15 @@
+meta {
+  name: my-coupons
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{baseUrl}}/api/promos/mine
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}

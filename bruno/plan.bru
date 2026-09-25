@@ -1,0 +1,26 @@
+meta {
+  name: plan
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/api/plan
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "text": "salida con mi novia, algo tranquilo para cenar y luego un bar"
+  }
+}
+
+docs {
+  POST /api/plan { text } → PlanResult { intro, stops: [{ placeId, placeName, category, hour, why }] }.
+  Sin ANTHROPIC_API_KEY responde con una plantilla sobre el catálogo.
+}

@@ -1,0 +1,239 @@
+# Infraestructura local de Planazo.
+#
+#   docker compose up -d                                        → solo infra (Redis + 3 Postgres); los servicios corren con `npm run start:dev`
+#   docker compose --profile app up --build -d                  → infra + los 5 servicios construidos desde los repos hermanos
+#   docker compose --profile app --profile frontend up --build  → además el frontend
+#
+# Los `build.context` apuntan a los repos hermanos (../planazo-<servicio>); cada uno debe tener un Dockerfile en su raíz.
+# Los secretos compartidos (JWT_SECRET, GATEWAY_KEY, ...) vienen de `.env` (copia de `.env.example`).
+
+x-app-common: &app-common
+  restart: unless-stopped
+  env_file: .env
+  profiles: ["app"]
+
+services:
+  # ------------------------------------------------------------------
+  # Infra siempre activa
+  # ------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: planazo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres-booking:
+    image: postgres:16-alpine
+    container_name: planazo-postgres-booking
+    environment:
+      POSTGRES_DB: booking
+      POSTGRES_USER: booking
+      POSTGRES_PASSWORD: booking
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg-booking-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U booking -d booking"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres-promo:
+    image: postgres:16-alpine
+    container_name: planazo-postgres-promo
+    environment:
+      POSTGRES_DB: promo
+      POSTGRES_USER: promo
+      POSTGRES_PASSWORD: promo
+    ports:
+      - "5434:5432"
+    volumes:
+      - pg-promo-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U promo -d promo"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  postgres-realtime:
+    image: postgres:16-alpine
+    container_name: planazo-postgres-realtime
+    environment:
+      POSTGRES_DB: realtime
+      POSTGRES_USER: realtime
+      POSTGRES_PASSWORD: realtime
+    ports:
+      - "5435:5432"
+    volumes:
+      - pg-realtime-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U realtime -d realtime"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ------------------------------------------------------------------
+  # Servicios de aplicación (profile "app")
+  # ------------------------------------------------------------------
+  api-gateway:
+    <<: *app-common
+    build:
+      context: ../planazo-api-gateway
+    container_name: planazo-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      BOOKING_URL: http://booking:3001
+      PROMO_URL: http://promo:3002
+      GAME_URL: http://game:3003
+      # JWT_SECRET, GATEWAY_KEY, ALLOWED_ORIGINS y ANTHROPIC_API_KEY vienen de .env
+    depends_on:
+      booking:
+        condition: service_healthy
+      promo:
+        condition: service_healthy
+      game:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+
+  booking:
+    <<: *app-common
+    build:
+      context: ../planazo-booking
+    container_name: planazo-booking
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: "3001"
+      DATABASE_URL: postgresql://booking:booking@postgres-booking:5432/booking
+      BUS_URL: redis://redis:6379
+      # GATEWAY_KEY viene de .env
+    depends_on:
+      postgres-booking:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+
+  promo:
+    <<: *app-common
+    build:
+      context: ../planazo-promo
+    container_name: planazo-promo
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: "3002"
+      DATABASE_URL: postgresql://promo:promo@postgres-promo:5432/promo
+      REDIS_URL: redis://redis:6379
+      BUS_URL: redis://redis:6379
+      # GATEWAY_KEY viene de .env
+    depends_on:
+      postgres-promo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+
+  game:
+    <<: *app-common
+    build:
+      context: ../planazo-game
+    container_name: planazo-game
+    ports:
+      - "3003:3003"   # HTTP (lobby: /rooms, /health)
+      - "8082:8082"   # WebSocket (partida: /rooms/:code/play)
+    environment:
+      PORT: "3003"
+      WS_PORT: "8082"
+      REDIS_URL: redis://redis:6379
+      BUS_URL: redis://redis:6379
+      # JWT_SECRET y GATEWAY_KEY vienen de .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+
+  realtime:
+    <<: *app-common
+    build:
+      context: ../planazo-realtime
+    container_name: planazo-realtime
+    ports:
+      - "8081:8081"   # WebSocket en /ws (y GET /health por HTTP en el mismo puerto)
+    environment:
+      PORT: "8081"
+      DATABASE_URL: postgresql://realtime:realtime@postgres-realtime:5432/realtime
+      BUS_URL: redis://redis:6379
+      # JWT_SECRET viene de .env
+    depends_on:
+      postgres-realtime:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+
+  # ------------------------------------------------------------------
+  # Frontend (profile "frontend", opcional)
+  # ------------------------------------------------------------------
+  # Requiere un Dockerfile en ../planazo-frontend/frontend (hoy NO existe; ver README §"Frontend en Docker").
+  # Las NEXT_PUBLIC_* se resuelven en tiempo de build de Next.js, por eso van también como build args.
+  # Apuntan a localhost porque quien las usa es el navegador, no el contenedor.
+  frontend:
+    profiles: ["frontend"]
+    restart: unless-stopped
+    build:
+      context: ../planazo-frontend/frontend
+      args:
+        NEXT_PUBLIC_API_MODE: live
+        NEXT_PUBLIC_API_URL: http://localhost:8080
+        NEXT_PUBLIC_REALTIME_URL: ws://localhost:8081/ws
+        NEXT_PUBLIC_GAME_URL: ws://localhost:8082
+    container_name: planazo-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_MODE: live
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_REALTIME_URL: ws://localhost:8081/ws
+      NEXT_PUBLIC_GAME_URL: ws://localhost:8082
+
+volumes:
+  redis-data:
+  pg-booking-data:
+  pg-promo-data:
+  pg-realtime-data:

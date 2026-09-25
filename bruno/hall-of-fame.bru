@@ -1,0 +1,19 @@
+meta {
+  name: hall-of-fame
+  type: http
+  seq: 15
+}
+
+get {
+  url: {{baseUrl}}/api/rooms/hall-of-fame
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+docs {
+  GET /api/rooms/hall-of-fame → HallEntry[] ordenado desc por score.
+}

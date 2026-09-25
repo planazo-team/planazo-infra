@@ -1,0 +1,6 @@
+{
+  "name": "planazo-k6",
+  "private": true,
+  "type": "module",
+  "description": "Marca los scripts k6 como ES modules para que `node --check` los valide en CI. k6 no usa este archivo."
+}

@@ -1,0 +1,28 @@
+meta {
+  name: reserve
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/reservations
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "slotId": "{{slotId}}",
+    "people": 1,
+    "version": {{slotVersion}}
+  }
+}
+
+docs {
+  POST /api/reservations { slotId, people, version } → 201 Reservation.
+  409 VERSION_CONFLICT si la franja cambió; 409 SIN_CUPO si no quedan cupos. Corre `place-detail` antes.
+}

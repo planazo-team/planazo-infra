@@ -1,0 +1,26 @@
+meta {
+  name: auth-demo
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/auth/demo
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "userId": "u1"
+  }
+}
+
+vars:post-response {
+  token: res.body.token
+}
+
+docs {
+  Login de demo. Usuarios semilla: u1..u6 (cliente), b1 (p7), b2 (p1), b3 (p8) (negocio).
+  Guarda el token en {{token}} para las demás peticiones.
+}

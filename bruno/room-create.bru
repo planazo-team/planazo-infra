@@ -1,0 +1,23 @@
+meta {
+  name: room-create
+  type: http
+  seq: 12
+}
+
+post {
+  url: {{baseUrl}}/api/rooms
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+vars:post-response {
+  roomCode: res.body.code
+}
+
+docs {
+  POST /api/rooms → 201 Room (el que llama es el host). Guarda {{roomCode}}.
+}

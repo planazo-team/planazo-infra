@@ -1,0 +1,34 @@
+meta {
+  name: promo-launch
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/promos
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "placeId": "p7",
+    "title": "2x1 en cocteles hasta las 9",
+    "discount": "2x1",
+    "stock": 10,
+    "durationS": 300
+  }
+}
+
+vars:post-response {
+  promoId: res.body.id
+}
+
+docs {
+  Requiere token de NEGOCIO (auth-demo con userId b1, que administra p7). → 201 Promo.
+  Guarda {{promoId}} para `promo-claim`.
+}
