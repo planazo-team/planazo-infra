@@ -1,9 +1,13 @@
 version: 2
 updates:
-  # Mantiene al día las acciones usadas en .github/workflows
+  # Mantiene al día las acciones usadas en .github/workflows, en un solo PR semanal.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]
     commit-message:
       prefix: ci
