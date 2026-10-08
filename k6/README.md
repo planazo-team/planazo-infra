@@ -9,7 +9,7 @@ Estas pruebas son la evidencia del **Definition of Done** del proyecto (`docs/co
 |---|---|---|---|
 | `cc1-promo-claim.js` | CC-1 | promo | 200 usuarios reclaman un cupón con stock 10: salen exactamente 10 cupones y 190 `PROMO_AGOTADA`. |
 | `cc3-booking-reserve.js` | CC-3 | booking | 25 usuarios reservan la misma franja con la misma `version`: cero sobreventa, se ocupan exactamente los cupos libres. |
-| `cc2-game-score.js` | CC-2 | game | 6 jugadores puntúan a la vez: el leaderboard siempre llega ordenado y el Hall of Fame no pierde a nadie. |
+| `cc2-game-score.js` | CC-2 | game | 6 jugadores puntúan a la vez: el leaderboard siempre llega ordenado y ningún puntaje se pierde. **Desactualizado:** usa el protocolo anterior (`/rooms` + WebSocket `INTENT`); hay que reescribirlo al de `contracts/game.md` (REST `/api/salas`, STOMP `mover`, estado por realtime). |
 | `rt2-reconnect.js` | RT-2 | realtime | Un cliente se cae, pasan cosas, vuelve con `RESUME`: el `REPLAY` trae todo lo perdido, sin duplicados, en orden. |
 
 Cada script obtiene sus tokens en `setup()` con `POST /api/auth/demo` usando los usuarios semilla (`u1..u6` clientes, `b1..b3` negocios). No hay que preparar nada a mano salvo tener los servicios arriba y el seed cargado.
@@ -69,9 +69,9 @@ k6 run --out json=k6-results/cc1.json k6/cc1-promo-claim.js
 Cambia las tres URLs por las públicas (`https://` y `wss://`). `booking` y `promo` no necesitan URL: se llega a ellos a través del gateway.
 
 ```bash
-export BASE_URL=https://planazo-api-gateway.up.railway.app
-export REALTIME_URL=wss://planazo-realtime.up.railway.app/ws
-export GAME_URL=wss://planazo-game.up.railway.app
+export BASE_URL=https://planazo-api-gateway-production.up.railway.app
+export REALTIME_URL=wss://planazo-realtime-production.up.railway.app/ws
+export GAME_URL=wss://planazo-game-production.up.railway.app
 
 k6 run -e BASE_URL=$BASE_URL k6/cc1-promo-claim.js
 k6 run -e BASE_URL=$BASE_URL k6/cc3-booking-reserve.js
@@ -79,7 +79,7 @@ k6 run -e BASE_URL=$BASE_URL -e GAME_URL=$GAME_URL k6/cc2-game-score.js
 k6 run -e BASE_URL=$BASE_URL -e REALTIME_URL=$REALTIME_URL k6/rt2-reconnect.js
 ```
 
-Ojo con el rate limit del gateway: si `cc1` con 200 VUs recibe `429`, aparecerá en `claims_otras` y la prueba falla. Súbelo o exímelo para la IP de la prueba antes de correr en Railway.
+Ojo con el rate limit del gateway: en producción está en 600 peticiones por minuto por IP (`RATE_LIMIT_PER_MINUTE`); `cc1` con 200 VUs hace unos 400 (login + claim) y cabe, pero si subes los VUs aparecerán `429` en `claims_otras` y la prueba falla. Estado al 8 de octubre: los k6 aún no se han corrido contra Railway.
 
 ## Qué significa cada threshold
 
@@ -116,7 +116,7 @@ Por qué dos variantes: con lock optimista todos los VUs mandan la misma `versio
 | `errores_ws: count==0` | Ningún `ERROR` del juego ni fallo de socket (AUTH aceptado, sala válida). |
 | `estados_recibidos: count>0` | El servidor emitió estado (RT-3, 20 Hz). |
 
-Partes que dependen de la implementación final de `game` (marcadas en el script): duración de la ronda (`ESPERA_HALL_S`), si el Hall guarda scores en 0, y el puerto/ruta del WS (`/rooms/:code/play`).
+Este script describe el diseño anterior del juego. El `game` real (Java) no tiene `/rooms` ni `INTENT`/`STATE`: hay que reescribirlo con `POST /api/salas/:id/jugadores`, STOMP `/app/salas/{id}/mover` y `GAME.STATE_UPDATE` por realtime, y verificar al final `GET /api/leaderboard`.
 
 ### `rt2-reconnect.js` — RT-2
 

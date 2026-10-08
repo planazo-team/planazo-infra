@@ -4,7 +4,7 @@ Fuente de verdad: `planazo-frontend/frontend/src/lib/realtime/ws.ts` (transporte
 
 ```
 URL:  ws://localhost:8081/ws        (local)
-      wss://<realtime>.up.railway.app/ws
+      wss://planazo-realtime-production.up.railway.app/ws   (producción; en Railway el proceso escucha en PORT=8080)
 ```
 
 El frontend se conecta **directo** a `realtime`, sin pasar por el gateway. Por eso `realtime` verifica el JWT por su cuenta con el mismo `JWT_SECRET` del gateway.
@@ -28,7 +28,7 @@ type ClientMsg =
 
 > **`last_seq` va en snake_case** a propósito: es el único campo así en todo el contrato. Se mantiene por compatibilidad con el frontend actual (`client.ts` lo manda tal cual). Todo lo demás (payloads, `RtEvent`) es camelCase.
 
-Topics válidos: `zone:zona-g` · `zone:zona-t` · `place:<placeId>` · `user:<userId>` · `room:<code>`.
+Topics válidos: `zone:zona-g` · `zone:zona-t` · `place:<placeId>` · `user:<userId>` · `salas` · `salas:<salaId>` · `global`. (`room:<code>` era del diseño anterior del juego.)
 
 ## Mensajes servidor → cliente (`ServerMsg`)
 
@@ -40,7 +40,7 @@ type ServerMsg =
 interface RtEvent<T = unknown> {
   seq: number;        // orden global, lo asigna realtime al persistir (BIGSERIAL)
   id: string;         // UUID del evento, viene del servicio emisor
-  type: EventType;    // 'PLACE.UPDATE' | 'INV.UPDATE' | 'RESERVE.OK' | 'PROMO.PUSH' | 'PROMO.WON' | 'PROMO.EXPIRED' | 'ROOM.JOIN' | 'SNAKE.SCORE' | 'ROUND.END'
+  type: EventType;    // 'PLACE.UPDATE' | 'INV.UPDATE' | 'RESERVE.OK' | 'PROMO.PUSH' | 'PROMO.WON' | 'PROMO.EXPIRED' | 'GAME.STATE_UPDATE' | 'LOBBY.ROOMS_UPDATE' | 'GAME.PARTIDA_FINALIZADA'
   payload: T;         // ver events.schema.json
   topics: string[];
   at: number;         // epoch ms
@@ -74,6 +74,8 @@ booking/promo/game  --PUBLISH planazo.events--> Redis --> realtime
 ```
 
 `realtime` no interpreta el `payload`: solo persiste, enruta y recuerda.
+
+> **Volumen:** `game` publica `GAME.STATE_UPDATE` 20 veces por segundo por sala en partida, y hoy `realtime` persiste cada uno. Decisión pendiente: difundirlos sin `INSERT` o purgar la tabla periódicamente.
 
 ## Almacenamiento
 

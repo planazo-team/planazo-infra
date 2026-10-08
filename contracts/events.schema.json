@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/planazo-team/planazo-infra/contracts/events.schema.json",
   "title": "Sobre de evento de dominio de Planazo",
-  "description": "Lo que booking, promo y game publican al canal Redis `planazo.events`. NO lleva `seq`: ese campo lo asigna `realtime` al persistir el evento en su tabla `events` (BIGSERIAL) y solo aparece en lo que el cliente recibe como `RtEvent { seq, id, type, payload, topics, at }`. Los payloads siguen exactamente lo que el frontend consume en sus `useRtEvent<T>` (planazo-frontend/frontend/src/lib/types.ts y las páginas que lo usan).",
+  "description": "Lo que booking, promo y game (Java) publican al canal Redis `planazo.events`. NO lleva `seq`: ese campo lo asigna `realtime` al persistir el evento en su tabla `events` (BIGSERIAL) y solo aparece en lo que el cliente recibe como `RtEvent { seq, id, type, payload, topics, at }`. Los payloads siguen exactamente lo que el frontend consume en sus `useRtEvent<T>` (planazo-frontend/frontend/src/lib/types.ts y las páginas que lo usan).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,7 +19,7 @@
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
     },
     "type": {
-      "description": "EventType de types.ts más los tres que emiten los servicios pero el frontend aún no consume.",
+      "description": "EventType de types.ts más los que emiten los servicios y el frontend aún no consume. ROOM.JOIN, SNAKE.* y ROUND.END son del diseño anterior del juego; game (Java) publica GAME.STATE_UPDATE, LOBBY.ROOMS_UPDATE y GAME.PARTIDA_FINALIZADA.",
       "type": "string",
       "enum": [
         "PLACE.UPDATE",
@@ -33,21 +33,31 @@
         "ROOM.JOIN",
         "SNAKE.SCORE",
         "SNAKE.DEATH",
-        "ROUND.END"
+        "ROUND.END",
+        "GAME.STATE_UPDATE",
+        "LOBBY.ROOMS_UPDATE",
+        "GAME.PARTIDA_FINALIZADA"
       ]
     },
     "topics": {
-      "description": "A quién se enruta: zone:zona-g, place:p7, user:u1, room:ABCD. Un evento puede ir a varios.",
+      "description": "A quién se enruta: zone:zona-g, place:p7, user:u1, salas, salas:sala-004, global (room:ABCD era del diseño anterior). Un evento puede ir a varios.",
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^(zone|place|user|room):"
+        "pattern": "^((zone|place|user|room|salas):|salas$|global$)"
       }
     },
     "payload": {
-      "type": "object"
+      "anyOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "array"
+        }
+      ]
     },
     "at": {
       "description": "Momento de emisión, epoch en milisegundos.",
@@ -244,6 +254,54 @@
         "properties": {
           "payload": {
             "$ref": "#/definitions/RoundEndPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "GAME.STATE_UPDATE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/GameStateUpdatePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "LOBBY.ROOMS_UPDATE"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/LobbyRoomsUpdatePayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "GAME.PARTIDA_FINALIZADA"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/definitions/GamePartidaFinalizadaPayload"
           }
         }
       }
@@ -786,12 +844,278 @@
           "$ref": "#/properties/topics"
         },
         "payload": {
-          "type": "object"
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "array"
+            }
+          ]
         },
         "at": {
           "$ref": "#/definitions/EpochMs"
         }
       }
+    },
+    "ResumenSala": {
+      "description": "game (Java) → ResumenSala. Una sala del catálogo fijo.",
+      "type": "object",
+      "required": [
+        "id",
+        "codigo",
+        "capacidad",
+        "cantidadJugadores",
+        "estado",
+        "nombresJugadores"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "codigo": {
+          "type": "string"
+        },
+        "capacidad": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "cantidadJugadores": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "estado": {
+          "type": "string",
+          "enum": [
+            "ESPERANDO_JUGADORES",
+            "CUENTA_REGRESIVA",
+            "EN_CURSO",
+            "FINALIZADA"
+          ]
+        },
+        "nombresJugadores": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Posicion": {
+      "type": "object",
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "JugadorEnSala": {
+      "description": "game → JugadorEnSalaDTO: snapshot de una serpiente en un tick.",
+      "type": "object",
+      "required": [
+        "jugadorId",
+        "jugadorNombre",
+        "cuerpo",
+        "direccion",
+        "estado",
+        "puntaje",
+        "conectado"
+      ],
+      "properties": {
+        "jugadorId": {
+          "type": "string"
+        },
+        "jugadorNombre": {
+          "type": "string"
+        },
+        "cuerpo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Posicion"
+          }
+        },
+        "direccion": {
+          "type": "string",
+          "enum": [
+            "ARRIBA",
+            "ABAJO",
+            "IZQUIERDA",
+            "DERECHA"
+          ]
+        },
+        "estado": {
+          "type": "string",
+          "enum": [
+            "VIVA",
+            "ELIMINADA",
+            "DESCONECTADA_CONGELADA"
+          ]
+        },
+        "puntaje": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "conectado": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ResultadoPartida": {
+      "description": "game → ResultadoPartida (SNK-10, CC-2).",
+      "type": "object",
+      "required": [
+        "salaId",
+        "salaCodigo",
+        "motivoVictoria",
+        "puntajes",
+        "iniciadaEn",
+        "finalizadaEn"
+      ],
+      "properties": {
+        "salaId": {
+          "type": "string"
+        },
+        "salaCodigo": {
+          "type": "string"
+        },
+        "ganadorJugadorId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ganadorJugadorNombre": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "motivoVictoria": {
+          "type": "string"
+        },
+        "puntajes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "jugadorId",
+              "jugadorNombre",
+              "puntaje"
+            ],
+            "properties": {
+              "jugadorId": {
+                "type": "string"
+              },
+              "jugadorNombre": {
+                "type": "string"
+              },
+              "puntaje": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "iniciadaEn": {
+          "type": "string"
+        },
+        "finalizadaEn": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "GameStateUpdatePayload": {
+      "description": "game → salas:<salaId>, en cada tick (20 Hz) y en cada cambio de estado. El frontend lo consume como `useRtEvent<EstadoJuego>` vía lib/game/client.ts: el payload ES el EstadoJuegoDTO, sin envolver.",
+      "type": "object",
+      "required": [
+        "salaId",
+        "salaCodigo",
+        "estado",
+        "capacidad",
+        "anchoTablero",
+        "altoTablero",
+        "jugadores",
+        "tiempoRestanteSegundos"
+      ],
+      "properties": {
+        "salaId": {
+          "type": "string"
+        },
+        "salaCodigo": {
+          "type": "string"
+        },
+        "estado": {
+          "type": "string",
+          "enum": [
+            "ESPERANDO_JUGADORES",
+            "CUENTA_REGRESIVA",
+            "EN_CURSO",
+            "FINALIZADA"
+          ]
+        },
+        "capacidad": {
+          "type": "integer"
+        },
+        "segundosCuentaRegresiva": {
+          "type": "integer"
+        },
+        "anchoTablero": {
+          "type": "integer"
+        },
+        "altoTablero": {
+          "type": "integer"
+        },
+        "jugadores": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/JugadorEnSala"
+          }
+        },
+        "comida": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Posicion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tiempoRestanteSegundos": {
+          "type": "integer"
+        },
+        "resultado": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ResultadoPartida"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "LobbyRoomsUpdatePayload": {
+      "description": "game → salas. La lista completa de salas con su cupo y estado; el payload ES el arreglo.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ResumenSala"
+      }
+    },
+    "GamePartidaFinalizadaPayload": {
+      "description": "game → global. Resultado de una partida terminada.",
+      "$ref": "#/definitions/ResultadoPartida"
     }
   }
 }

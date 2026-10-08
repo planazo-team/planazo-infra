@@ -27,13 +27,15 @@ Reglas generales:
 | `POST` | `/api/promos/:id/claim` | `/promos/:id/claim` | promo | cliente | — (usa `x-user-id`) | `200` → `Coupon` | `409 PROMO_AGOTADA`, `409 PROMO_VENCIDA`, `404` |
 | `GET` | `/api/promos/mine` | `/promos/mine` | promo | cliente | — | `Coupon[]` | — |
 | `POST` | `/api/plan` | — (módulo `agent` del gateway) | gateway | cliente | `{ text: string }` | `PlanResult` | `502` si el modelo falla y no hay plantilla |
-| `POST` | `/api/rooms` | `/rooms` | game | cliente | — (el host sale de `x-user-id`) | `201` → `Room` | — |
-| `POST` | `/api/rooms/:code/join` | `/rooms/:code/join` | game | cliente | — | `Room` | `404 SALA_NO_EXISTE`, `409 SALA_EN_JUEGO` |
-| `POST` | `/api/rooms/:code/start` | `/rooms/:code/start` | game | cliente (host) | — | `Room` (`status: 'playing'`) | `404 SALA_NO_EXISTE`, `409 JUGADORES_INSUFICIENTES`, `403` si no es el host |
-| `GET` | `/api/rooms/hall-of-fame` | `/rooms/hall-of-fame` | game | cliente | — | `HallEntry[]` ordenado desc por `score` | — |
+| `GET` | `/api/salas` | `/api/v1/salas` | game (Java) · recibe el `Bearer` | cliente | — | `{ data: ResumenSala[] }` | — |
+| `GET` | `/api/salas/:id` | `/api/v1/salas/:id` | game | cliente | — | `{ data: ResumenSala }` | `404` |
+| `POST` | `/api/salas/:id/jugadores` | `/api/v1/salas/:id/jugadores` | game | cliente | — (jugador y nombre salen del JWT: `sub`, `nombre`) | `201` → `{ data: ResumenSala }` | `409 SALA_LLENA`, `404` |
+| `DELETE` | `/api/salas/:id/jugadores/:jugadorId` | `/api/v1/salas/:id/jugadores/:jugadorId` | game | cliente (el propio) | — | `204` | `403` si `jugadorId` no es el del token |
+| `GET` | `/api/leaderboard?limite=` | `/api/v1/leaderboard?limite=` | game | cliente | query `limite` (default 10) | `{ data: EntradaLeaderboard[] }` desc por `puntajeTotal` | — |
+| `GET` | `/api/historico/mio` | `/api/v1/historico/mio` | game | cliente | — | `{ data: ResultadoPartida[] }` | — |
 | `GET` | `/health` | `/health` | todos | público | — | `200` `{ status: 'ok' }` (o similar) | — |
 
-Nota de enrutamiento: `GET /rooms/hall-of-fame` debe declararse **antes** que `/rooms/:code/*` en `game`, si no `hall-of-fame` se interpreta como código de sala.
+Nota sobre `game`: es el único servicio que **envuelve** sus respuestas en `{ data }` y devuelve los errores como `{ codigo, mensaje }` (p. ej. `SALA_LLENA`). El gateway le reenvía el `Authorization: Bearer` y game valida el JWT; no recibe `x-user-*`. La partida (comandos por STOMP, estado por realtime) está en `game.md`. `/api/rooms*` sigue declarado en el gateway por compatibilidad pero game no lo implementa.
 
 ## Formas de respuesta (de `lib/types.ts`)
 
@@ -74,9 +76,11 @@ interface Coupon {
 interface PlanStop { placeId: string; placeName: string; category: Category; hour: string; why: string; }
 interface PlanResult { intro: string; stops: PlanStop[]; }
 
-interface GamePlayer { id: string; name: string; color: string; alive: boolean; score: number; isBot?: boolean; }
-interface Room { code: string; hostId: string; status: 'lobby' | 'playing' | 'finished'; players: GamePlayer[]; }
-interface HallEntry { name: string; score: number; code: string; at: number; }
+// game (planazo-frontend/frontend/src/lib/game/types.ts)
+type EstadoSala = 'ESPERANDO_JUGADORES' | 'CUENTA_REGRESIVA' | 'EN_CURSO' | 'FINALIZADA';
+interface ResumenSala { id: string; codigo: string; capacidad: number; cantidadJugadores: number; estado: EstadoSala; nombresJugadores: string[]; }
+interface EntradaLeaderboard { posicion: number; jugadorId: string; jugadorNombre: string; puntajeTotal: number; }
+interface ResultadoPartida { salaId: string; salaCodigo: string; ganadorJugadorId: string | null; ganadorJugadorNombre: string | null; motivoVictoria: string; puntajes: { jugadorId: string; jugadorNombre: string; puntaje: number }[]; iniciadaEn: string; finalizadaEn: string; }
 ```
 
 ### `POST /api/plan` — aclaración
@@ -92,9 +96,8 @@ La respuesta es **`PlanResult { intro, stops: [{ placeId, placeName, category, h
 | `CAPACIDAD_MENOR` | 409 | booking | El negocio intenta bajar `capacity` por debajo de `taken`. |
 | `PROMO_AGOTADA` | 409 | promo | `stock` llegó a 0 antes de este claim (CC-1). |
 | `PROMO_VENCIDA` | 409 | promo | `expiresAt` ya pasó. |
-| `SALA_NO_EXISTE` | 404 | game | Código de sala inválido. |
-| `SALA_EN_JUEGO` | 409 | game | Intento de `join` con la partida en curso. |
-| `JUGADORES_INSUFICIENTES` | 409 | game | `start` con menos de dos jugadores. |
+| `SALA_LLENA` | 409 | game | La sala ya tiene `capacidad` jugadores. game responde `{ codigo, mensaje }`; el frontend muestra `mensaje`. |
+| `SALA_NO_ENCONTRADA` | 404 | game | El `salaId` no existe en el catálogo. |
 | `SIN_TOKEN` / `TOKEN_INVALIDO` | 401 | gateway | Falta el `Bearer` o está vencido. |
 | `USUARIO_INVALIDO` | 400 | gateway | `userId` no está en los usuarios semilla. |
 | `SIN_CONEXION` | 0 | (frontend) | No es del servidor: el `fetch` falló. |
