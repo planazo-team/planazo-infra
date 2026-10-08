@@ -6,9 +6,9 @@ Este repo **no tiene código de negocio**. Tiene lo que necesita el equipo para 
 
 | Carpeta | Qué hay |
 |---|---|
-| `docker-compose.yml` | Redis + 3 Postgres siempre; los 5 servicios bajo el profile `app`; el frontend bajo `frontend`. |
-| `scripts/` | `clone-all`, `up`, `up-all`, `down`, `status`, `seed`. Bash, funcionan en Git Bash de Windows. |
-| `k6/` | Cuatro pruebas de carga, una por reto de concurrencia/tiempo real. Son la evidencia del Definition of Done. |
+| `docker-compose.yml` | Redis + 4 Postgres siempre; los 5 servicios bajo el profile `app` (game se construye con Maven desde su Dockerfile); el frontend bajo `frontend`. |
+| `scripts/` | `clone-all`, `up`, `up-all`, `down`, `status`, `seed` y `railway-deploy-core` (crea gateway, booking y promo en Railway). Bash, funcionan en Git Bash de Windows. |
+| `k6/` | Cuatro pruebas de carga, una por reto de concurrencia/tiempo real. Son la evidencia del Definition of Done. `cc2-game-score.js` sigue el protocolo anterior del juego y hay que reescribirlo a STOMP. |
 | `contracts/` | Rutas HTTP, JSON Schema de los eventos, protocolos WebSocket y modelo de seguridad. **Si esto y el frontend no coinciden, manda el frontend.** |
 | `bruno/` | Colección [Bruno](https://www.usebruno.com/) para probar el gateway a mano. |
 
@@ -33,7 +33,7 @@ IdeaProjects/                     (o la carpeta que uses)
 ├── planazo-api-gateway/          NestJS · :8080 · + módulo agent
 ├── planazo-booking/              NestJS · :3001 · Postgres
 ├── planazo-promo/                NestJS · :3002 · Postgres + Redis
-├── planazo-game/                 NestJS · HTTP :3003 · WS :8082 · Redis
+├── planazo-game/                 Java + Spring Boot · REST /api/v1 y STOMP /ws en :8082 · Postgres + Redis
 └── planazo-realtime/             NestJS · WS :8081 (/ws) · Postgres + Redis
 ```
 
@@ -70,13 +70,13 @@ Para apagar: `scripts/down.sh` (conserva datos) o `scripts/down.sh -v` (borra vo
 | api-gateway | 8080 | http://localhost:8080 · `/health` · `/api/*` | `NEXT_PUBLIC_API_URL` |
 | booking | 3001 | http://localhost:3001 · `/health` | `BOOKING_URL` del gateway |
 | promo | 3002 | http://localhost:3002 · `/health` | `PROMO_URL` del gateway |
-| game HTTP | 3003 | http://localhost:3003 · `/health` · `/rooms*` | `GAME_URL` del gateway |
-| game WS | 8082 | ws://localhost:8082/rooms/:code/play | `NEXT_PUBLIC_GAME_URL` |
+| game (Java) | 8082 | http://localhost:8082 · `/actuator/health` · `/api/v1/*` · `/swagger-ui.html` · STOMP en `/ws` | `GAME_URL` del gateway (`http://localhost:8082`) y `NEXT_PUBLIC_GAME_URL` (`ws://localhost:8082`) |
 | realtime WS | 8081 | ws://localhost:8081/ws · `/health` por HTTP | `NEXT_PUBLIC_REALTIME_URL` |
 | redis | 6379 | redis://localhost:6379 | `BUS_URL`, `REDIS_URL` |
 | postgres-booking | 5433 | postgresql://booking:booking@localhost:5433/booking | `DATABASE_URL` de booking |
 | postgres-promo | 5434 | postgresql://promo:promo@localhost:5434/promo | `DATABASE_URL` de promo |
 | postgres-realtime | 5435 | postgresql://realtime:realtime@localhost:5435/realtime | `DATABASE_URL` de realtime |
+| postgres-game | 5436 | postgresql://minijuego:minijuego@localhost:5436/minijuego | `PGHOST`/`PGPORT`/... de game |
 
 Cuando los servicios corren **con `npm run start:dev`** (fuera de Docker) usan las URLs de `localhost` de arriba en su propio `.env`. Cuando corren **dentro de compose** (`up-all.sh`) el compose les inyecta los hostnames internos (`redis`, `postgres-booking`, `http://booking:3001`, …) y los secretos de `.env`.
 
@@ -85,16 +85,16 @@ Cuando los servicios corren **con `npm run start:dev`** (fuera de Docker) usan l
 | Servicio | Variables |
 |---|---|
 | api-gateway | `PORT`, `JWT_SECRET`, `GATEWAY_KEY`, `BOOKING_URL`, `PROMO_URL`, `GAME_URL`, `ALLOWED_ORIGINS`, `ANTHROPIC_API_KEY` |
-| booking | `PORT`, `DATABASE_URL`, `BUS_URL`, `GATEWAY_KEY` |
-| promo | `PORT`, `DATABASE_URL`, `REDIS_URL`, `BUS_URL`, `GATEWAY_KEY` |
-| game | `PORT`, `WS_PORT`, `JWT_SECRET`, `REDIS_URL`, `BUS_URL`, `GATEWAY_KEY` |
-| realtime | `PORT`, `JWT_SECRET`, `DATABASE_URL`, `BUS_URL` |
+| booking | `PORT`, `BUS_URL`, `GATEWAY_KEY` (`DATABASE_URL` cuando pase a PostgreSQL; hoy en memoria) |
+| promo | `PORT`, `REDIS_URL`, `BUS_URL`, `GATEWAY_KEY` (`DATABASE_URL` cuando pase a PostgreSQL) |
+| game | `SERVER_PORT`, `JWT_SECRETO` (= `JWT_SECRET`), `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `REDISHOST`, `REDISPORT`, `REDISPASSWORD` |
+| realtime | `PORT`, `JWT_SECRET`, `GATEWAY_KEY`, `DATABASE_URL`, `BUS_URL` |
 
 Un solo Redis hace de bus (canal `planazo.events`) y de almacén de contadores/leaderboard en el MVP.
 
 ### Frontend en Docker
 
-El servicio `frontend` del compose (profile `frontend`) espera un `Dockerfile` en `planazo-frontend/frontend/`, que **hoy no existe**: el frontend se corre con `npm run dev` o se despliega en Vercel. Si se añade, debe aceptar las `NEXT_PUBLIC_*` como `ARG` de build (Next.js las resuelve al compilar). Hasta entonces, `scripts/up-all.sh --frontend` fallará en el build.
+El servicio `frontend` del compose (profile `frontend`) construye `planazo-frontend/frontend/Dockerfile` pasando las `NEXT_PUBLIC_*` como `ARG` de build (Next.js las resuelve al compilar). En el día a día el frontend se corre con `npm run dev` o se usa el de Vercel.
 
 ## Pruebas de carga (k6)
 
@@ -109,7 +109,7 @@ Todo parametrizado por env (`BASE_URL`, `REALTIME_URL`, `GAME_URL`, `VUS`, `STOC
 
 ## Cuando cambia el contrato
 
-El contrato lo define el frontend (`planazo-frontend/frontend/src/lib/types.ts`, `api/types.ts`, `api/live.ts`, `realtime/*.ts`, `game/connection.ts`). Para cambiarlo:
+El contrato lo define el frontend (`planazo-frontend/frontend/src/lib/types.ts`, `api/types.ts`, `api/live.ts`, `realtime/*.ts`, `game/types.ts`, `game/client.ts`). Para cambiarlo:
 
 1. **PR a `planazo-frontend`** con el cambio en los tipos y en el mock (`lib/mock/*`), para que el modo `mock` siga siendo la referencia de comportamiento.
 2. **Actualizar `contracts/` aquí** en el mismo día: `http.md`, `events.schema.json`, `realtime.md`, `game.md`. El CI valida el schema.
@@ -119,14 +119,23 @@ Nunca al revés: un servicio no cambia una ruta o un payload sin que el frontend
 
 ## Despliegue en Railway
 
-Un solo **proyecto** de Railway con seis servicios (gateway, booking, promo, game, realtime + los plugins de Postgres ×3 y Redis ×1). El frontend va en Vercel con Root Directory = `frontend`.
+Un solo **proyecto** de Railway con los cinco servicios, un Postgres y un Redis. El frontend va en Vercel con Root Directory = `frontend`. Estado al 8 de octubre de 2026: todo desplegado.
 
-- **Variables compartidas** del proyecto: `JWT_SECRET`, `GATEWAY_KEY`, `BUS_URL` (la URL interna del Redis). Cada servicio las referencia con `${{shared.JWT_SECRET}}` para que nunca se desincronicen.
-- **Red privada** para `booking` y `promo` (y el HTTP de `game`): sin dominio público; el gateway les habla por `http://<servicio>.railway.internal:<puerto>`.
-- **Dominio público** solo para `api-gateway` (→ `NEXT_PUBLIC_API_URL`), `realtime` (→ `NEXT_PUBLIC_REALTIME_URL`, con `wss://` y ruta `/ws`) y el WS de `game` (→ `NEXT_PUBLIC_GAME_URL`, `wss://`).
-- **1 réplica** para `game` y `realtime`: tienen estado en memoria (salas, suscripciones) y varias instancias lo repartirían mal. Los demás pueden escalar.
-- `ALLOWED_ORIGINS` del gateway = el dominio de Vercel.
-- Cada Postgres es de un solo servicio (`DATABASE_URL` distinto). Nadie escribe en la base de otro.
+| Servicio | Fuente | Exposición | Variables |
+|---|---|---|---|
+| `planazo-api-gateway` | GitHub `main`, Dockerfile | público `https://planazo-api-gateway-production.up.railway.app` | `NODE_ENV`, `PORT=8080`, `JWT_SECRET`, `GATEWAY_KEY`, `ALLOWED_ORIGINS`, `BOOKING_URL`, `PROMO_URL`, `GAME_URL`, `RATE_LIMIT_PER_MINUTE=600` |
+| `planazo-booking` | GitHub `main` | privado `planazo-booking.railway.internal:3001` | `PORT=3001`, `GATEWAY_KEY`, `BUS_URL=${{Redis.REDIS_URL}}` |
+| `planazo-promo` | GitHub `main` | privado `planazo-promo.railway.internal:3002` | `PORT=3002`, `GATEWAY_KEY`, `REDIS_URL`, `BUS_URL` (ambas `${{Redis.REDIS_URL}}`) |
+| `planazo-realtime` | GitHub `main` | público `wss://planazo-realtime-production.up.railway.app/ws` | `DATABASE_URL` (Postgres, esquema `public`), `BUS_URL`, `JWT_SECRET`, `GATEWAY_KEY` |
+| `planazo-game` | GitHub `main`, Dockerfile Maven | público `planazo-game-production.up.railway.app:8082` (REST + STOMP) | `PG*` y `REDIS*` (referencias al Postgres y Redis del proyecto), `JWT_SECRETO` (= `JWT_SECRET`) |
+| `Postgres` | imagen | privado | compartido: realtime (`public`) y game (`minijuego`) |
+| `Redis` | imagen | privado | bus `planazo.events`, stock de promo, leaderboard de game (db 1) |
+
+- `scripts/railway-deploy-core.sh` crea o actualiza gateway, booking y promo con esas variables (genera `JWT_SECRET` y `GATEWAY_KEY` si no se le pasan). realtime y game se conectan con `railway service source connect --repo planazo-team/<repo> --branch main --service <servicio>` y reciben los secretos a mano.
+- Los secretos están hoy como variables de cada servicio, no como variables compartidas del proyecto; el valor es el mismo en todos.
+- **1 réplica** para `game` y `realtime`: tienen estado en memoria (salas, suscripciones).
+- `ALLOWED_ORIGINS` del gateway = `https://planazo-frontend.vercel.app,http://localhost:3000`.
+- En Vercel: `NEXT_PUBLIC_API_MODE=live`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_REALTIME_URL`, `NEXT_PUBLIC_GAME_URL` en Production; cada push a `main` despliega y cada PR tiene preview.
 
 Modelo de seguridad completo (qué es público, dónde vive cada secreto): [`contracts/seguridad.md`](contracts/seguridad.md).
 

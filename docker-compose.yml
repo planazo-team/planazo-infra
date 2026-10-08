@@ -1,6 +1,6 @@
 # Infraestructura local de Planazo.
 #
-#   docker compose up -d                                        → solo infra (Redis + 3 Postgres); los servicios corren con `npm run start:dev`
+#   docker compose up -d                                        → solo infra (Redis + 4 Postgres); los servicios corren con `npm run start:dev` (game con mvn)
 #   docker compose --profile app up --build -d                  → infra + los 5 servicios construidos desde los repos hermanos
 #   docker compose --profile app --profile frontend up --build  → además el frontend
 #
@@ -80,6 +80,23 @@ services:
       timeout: 3s
       retries: 10
 
+  postgres-game:
+    image: postgres:16-alpine
+    container_name: planazo-postgres-game
+    environment:
+      POSTGRES_DB: minijuego
+      POSTGRES_USER: minijuego
+      POSTGRES_PASSWORD: minijuego
+    ports:
+      - "5436:5432"
+    volumes:
+      - pg-game-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minijuego -d minijuego"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   # ------------------------------------------------------------------
   # Servicios de aplicación (profile "app")
   # ------------------------------------------------------------------
@@ -94,7 +111,7 @@ services:
       PORT: "8080"
       BOOKING_URL: http://booking:3001
       PROMO_URL: http://promo:3002
-      GAME_URL: http://game:3003
+      GAME_URL: http://game:8082
       # JWT_SECRET, GATEWAY_KEY, ALLOWED_ORIGINS y ANTHROPIC_API_KEY vienen de .env
     depends_on:
       booking:
@@ -119,7 +136,7 @@ services:
       - "3001:3001"
     environment:
       PORT: "3001"
-      DATABASE_URL: postgresql://booking:booking@postgres-booking:5432/booking
+      DATABASE_URL: postgresql://booking:booking@postgres-booking:5432/booking   # aún no se usa: estado en memoria
       BUS_URL: redis://redis:6379
       # GATEWAY_KEY viene de .env
     depends_on:
@@ -143,7 +160,7 @@ services:
       - "3002:3002"
     environment:
       PORT: "3002"
-      DATABASE_URL: postgresql://promo:promo@postgres-promo:5432/promo
+      DATABASE_URL: postgresql://promo:promo@postgres-promo:5432/promo   # aún no se usa: promos y cupones en memoria
       REDIS_URL: redis://redis:6379
       BUS_URL: redis://redis:6379
       # GATEWAY_KEY viene de .env
@@ -162,22 +179,27 @@ services:
   game:
     <<: *app-common
     build:
-      context: ../planazo-game
+      context: ../planazo-game   # Java 21 + Spring Boot; Dockerfile multi-stage con Maven
     container_name: planazo-game
     ports:
-      - "3003:3003"   # HTTP (lobby: /rooms, /health)
-      - "8082:8082"   # WebSocket (partida: /rooms/:code/play)
+      - "8082:8082"   # REST /api/v1, Swagger y STOMP /ws en el mismo puerto
     environment:
-      PORT: "3003"
-      WS_PORT: "8082"
-      REDIS_URL: redis://redis:6379
-      BUS_URL: redis://redis:6379
-      # JWT_SECRET y GATEWAY_KEY vienen de .env
+      SERVER_PORT: "8082"
+      PGHOST: postgres-game
+      PGPORT: "5432"
+      PGDATABASE: minijuego
+      PGUSER: minijuego
+      PGPASSWORD: minijuego
+      REDISHOST: redis
+      REDISPORT: "6379"
+      JWT_SECRETO: ${JWT_SECRET}   # el mismo secreto del gateway, con el nombre que lee game
     depends_on:
+      postgres-game:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3003/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 6
@@ -194,7 +216,7 @@ services:
       PORT: "8081"
       DATABASE_URL: postgresql://realtime:realtime@postgres-realtime:5432/realtime
       BUS_URL: redis://redis:6379
-      # JWT_SECRET viene de .env
+      # JWT_SECRET y GATEWAY_KEY vienen de .env
     depends_on:
       postgres-realtime:
         condition: service_healthy
@@ -210,7 +232,7 @@ services:
   # ------------------------------------------------------------------
   # Frontend (profile "frontend", opcional)
   # ------------------------------------------------------------------
-  # Requiere un Dockerfile en ../planazo-frontend/frontend (hoy NO existe; ver README §"Frontend en Docker").
+  # Construye ../planazo-frontend/frontend/Dockerfile.
   # Las NEXT_PUBLIC_* se resuelven en tiempo de build de Next.js, por eso van también como build args.
   # Apuntan a localhost porque quien las usa es el navegador, no el contenedor.
   frontend:
@@ -237,3 +259,4 @@ volumes:
   pg-booking-data:
   pg-promo-data:
   pg-realtime-data:
+  pg-game-data:
