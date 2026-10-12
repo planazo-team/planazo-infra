@@ -252,26 +252,40 @@ async function ganadores() {
     const j = await api('POST', `/api/salas/${SALA}/jugadores`, { token: u.token });
     if (j.status >= 300) return check('CC-2: entrar a la sala de duelo', false, `${j.status} ${JSON.stringify(j.data)}`);
   }
+  // El estado de cada tick lo publica game en el bus y llega por realtime
+  // (GAME.STATE_UPDATE en salas:<id>), igual que en la app. Los comandos van por STOMP.
+  const rt = rtCliente(a.token, [`salas:${SALA}`]);
+  await rt.abierto;
+  let resultado = null;
+  let enCurso = false;
+  const mirar = () => {
+    for (const e of rt.eventos.splice(0)) {
+      if (e.type !== 'GAME.STATE_UPDATE') continue;
+      if (e.payload.estado === 'EN_CURSO') enCurso = true;
+      if (e.payload.resultado) resultado = e.payload.resultado;
+    }
+  };
+  const vigia = setInterval(mirar, 50);
   const conA = stomp(a.token);
   const conB = stomp(b.token);
   await Promise.all([conA.conectado, conB.conectado]);
-  let resultado = null;
-  let enCurso = false;
-  for (const c of [conA, conB]) {
-    c.sub(`/topic/salas/${SALA}`, (e) => {
-      if (e.estado === 'EN_CURSO') enCurso = true;
-      if (e.resultado) resultado = e.resultado;
-    });
-    c.send(`/app/salas/${SALA}/registrar-sesion`, {});
-  }
+  for (const c of [conA, conB]) c.send(`/app/salas/${SALA}/registrar-sesion`, {});
   const empezo = await esperar(() => enCurso, 20000);
   check('CC-2: la partida arranca sola con la sala llena', !!empezo);
-  // Ana camina hacia un borde hasta chocar.
-  const t = setInterval(() => conA.send(`/app/salas/${SALA}/mover`, { direccion: 'IZQUIERDA' }), 120);
-  const fin = await esperar(() => resultado, 30000);
+  // Ana camina hacia un borde hasta chocar. El juego ignora el giro de 180°,
+  // así que cambia de dirección cada 3 s: alguna la lleva contra la pared.
+  const rumbos = ['ARRIBA', 'IZQUIERDA', 'ABAJO', 'DERECHA'];
+  const inicio = Date.now();
+  const t = setInterval(() => {
+    const direccion = rumbos[Math.floor((Date.now() - inicio) / 3000) % rumbos.length];
+    conA.send(`/app/salas/${SALA}/mover`, { direccion });
+  }, 110);
+  const fin = await esperar(() => resultado, 90000);
   clearInterval(t);
+  clearInterval(vigia);
   conA.close();
   conB.close();
+  rt.ws.close();
   check('CC-2: la partida termina con un ganador registrado', !!fin && fin.ganadorJugadorId === b.user.id, fin ? `ganó ${fin.ganadorJugadorNombre}` : 'sin resultado');
 
   await sleep(1500); // promo procesa GAME.PARTIDA_FINALIZADA por el bus
