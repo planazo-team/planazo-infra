@@ -238,7 +238,7 @@ async function ganadores() {
   const negocio = (await api('POST', '/api/auth/demo', { body: { userId: 'b1' } })).data.token;
   const promo = await api('POST', '/api/promos', {
     token: negocio,
-    body: { placeId: 'p7', title: 'Prueba bono para el ganador', discount: 'QA', stock: 2, durationS: 600, soloGanadores: true, puestos: 1 },
+    body: { placeId: 'p7', title: 'Prueba bono para el ganador', discount: 'QA', stock: 2, durationS: 180, soloGanadores: true, puestos: 1 },
   });
   if (promo.status !== 201) return check('Solo ganadores: lanzar', false, JSON.stringify(promo.data));
 
