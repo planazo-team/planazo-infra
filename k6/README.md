@@ -1,5 +1,7 @@
 # Pruebas de carga con k6
 
+> **Prueba de punta a punta sin instalar nada:** `node pruebas/produccion.mjs` (Node 22+) corre contra Railway RT-1, RT-2 (incluida la suscripción después de `RESUME`), CC-3 con 25 reservas simultáneas, CC-1 con 60 personas contra stock 5, un cupón por persona y CC-2 con una partida real de dos bots en una sala de duelo: solo el ganador puede reclamar el bono de ganadores. Las URLs se cambian con `BASE_URL`, `REALTIME_URL` y `GAME_WS`.
+
 Estas pruebas son la evidencia del **Definition of Done** del proyecto (`docs/contexto.md` §13):
 
 1. **Recurso finito** (`booking`, `promo`, `game`): no se da por terminada una historia sin una prueba con peticiones concurrentes y **cero sobreventas**.
