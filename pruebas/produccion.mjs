@@ -12,8 +12,11 @@
  *   CC-3  N reservas simultáneas con la misma versión: gana exactamente una
  *   CC-1  M personas contra una promo de stock S: exactamente S cupones
  *         y cada persona reclama una sola vez
- *   CC-2  una partida real de dos bots en una sala de duelo: el ganador
- *         queda registrado y SOLO él puede reclamar el bono de ganadores
+ *   CC-2  una partida real de dos bots en una sala de duelo: las serpientes
+ *         avanzan solas, el ganador queda registrado y SOLO él puede
+ *         reclamar el bono de ganadores
+ *   Cancelar  una reserva cancelada devuelve sus cupos
+ *   Salas  quien entra a una sala sin conexión de juego sale solo
  *   Agente  POST /api/plan devuelve una ruta con lugares del catálogo
  *
  * Deja rastro mínimo en producción: algunas reservas de prueba, promos
@@ -183,6 +186,14 @@ async function rt1yCc3() {
   const despues = (await api('GET', `/api/places/${p.id}`, { token: yo.token })).data.slots.find((x) => x.id === s.id);
   check('CC-3: sin sobreventa', despues.taken === s.taken + 1 && despues.version === s.version + 1, `taken ${s.taken}→${despues.taken}`);
 
+  // Cancelar: quien ganó la reserva la cancela y los cupos vuelven.
+  const iOk = r.findIndex((x) => x.status === 201 || x.status === 200);
+  const ajena = await api('DELETE', `/api/reservations/${r[iOk].data.id}`, { token: yo.token });
+  check('Cancelar: una reserva ajena no se puede cancelar', ajena.data?.code === 'RESERVA_AJENA', ajena.data?.code);
+  const cancel = await api('DELETE', `/api/reservations/${r[iOk].data.id}`, { token: usuarios[iOk].token });
+  const tras = (await api('GET', `/api/places/${p.id}`, { token: yo.token })).data.slots.find((x) => x.id === s.id);
+  check('Cancelar: los cupos vuelven a la franja', cancel.status === 200 && tras.taken === s.taken, `taken ${despues.taken}→${tras.taken}`);
+
   const ev = await esperar(() => rt.eventos.find((e) => e.type === 'PLACE.UPDATE' && e.payload.placeId === p.id));
   check('RT-1: el mapa recibe PLACE.UPDATE en vivo', !!ev, ev ? `seq ${ev.seq}` : 'no llegó');
 
@@ -258,10 +269,15 @@ async function ganadores() {
   await rt.abierto;
   let resultado = null;
   let enCurso = false;
+  const cabezasBeto = [];
   const mirar = () => {
     for (const e of rt.eventos.splice(0)) {
       if (e.type !== 'GAME.STATE_UPDATE') continue;
-      if (e.payload.estado === 'EN_CURSO') enCurso = true;
+      if (e.payload.estado === 'EN_CURSO') {
+        enCurso = true;
+        const beto = e.payload.jugadores.find((j) => j.jugadorId === b.user.id);
+        if (beto?.cuerpo?.[0]) cabezasBeto.push(`${beto.cuerpo[0].x},${beto.cuerpo[0].y}`);
+      }
       if (e.payload.resultado) resultado = e.payload.resultado;
     }
   };
@@ -272,20 +288,17 @@ async function ganadores() {
   for (const c of [conA, conB]) c.send(`/app/salas/${SALA}/registrar-sesion`, {});
   const empezo = await esperar(() => enCurso, 20000);
   check('CC-2: la partida arranca sola con la sala llena', !!empezo);
-  // Ana camina hacia un borde hasta chocar. El juego ignora el giro de 180°,
-  // así que cambia de dirección cada 3 s: alguna la lleva contra la pared.
-  const rumbos = ['ARRIBA', 'IZQUIERDA', 'ABAJO', 'DERECHA'];
-  const inicio = Date.now();
-  const t = setInterval(() => {
-    const direccion = rumbos[Math.floor((Date.now() - inicio) / 3000) % rumbos.length];
-    conA.send(`/app/salas/${SALA}/mover`, { direccion });
-  }, 110);
-  const fin = await esperar(() => resultado, 90000);
+  // Snake continuo: las serpientes avanzan solas. Ana (nace en (4,2) mirando a
+  // la derecha) gira hacia arriba y choca con el borde en 3 pasos; Beto no toca
+  // nada y sigue derecho, lejos de las paredes.
+  const t = setInterval(() => conA.send(`/app/salas/${SALA}/mover`, { direccion: 'ARRIBA' }), 100);
+  const fin = await esperar(() => resultado, 60000);
   clearInterval(t);
   clearInterval(vigia);
   conA.close();
   conB.close();
   rt.ws.close();
+  check('Snake continuo: la serpiente avanza sin recibir teclas', new Set(cabezasBeto).size >= 2, `${new Set(cabezasBeto).size} posiciones de Beto`);
   check('CC-2: la partida termina con un ganador registrado', !!fin && fin.ganadorJugadorId === b.user.id, fin ? `ganó ${fin.ganadorJugadorNombre}` : 'sin resultado');
 
   await sleep(1500); // promo procesa GAME.PARTIDA_FINALIZADA por el bus
@@ -297,13 +310,31 @@ async function ganadores() {
   await api('DELETE', `/api/salas/${SALA}/jugadores/${b.user.id}`, { token: b.token });
 }
 
+async function salaSinConexion() {
+  // Alguien entra a una sala por REST y cierra la app sin conectarse al juego.
+  const yo = await login('QA Fantasma');
+  const sala = 'sala-005';
+  const j = await api('POST', `/api/salas/${sala}/jugadores`, { token: yo.token });
+  if (j.status >= 300) return check('Salas: entrar sin conexión', false, `${j.status}`);
+  const adentro = async () =>
+    ((await api('GET', '/api/salas', { token: yo.token })).data?.data ?? []).find((s) => s.id === sala)?.nombresJugadores.includes('QA Fantasma');
+  check('Salas: entra a la sala', await adentro());
+  const inicio = Date.now();
+  let sigue = true;
+  while (sigue && Date.now() - inicio < 45000) {
+    await sleep(3000);
+    sigue = await adentro();
+  }
+  check('Salas: sin conexión de juego sale solo', !sigue, `${Math.round((Date.now() - inicio) / 1000)} s`);
+}
+
 async function agente() {
   const yo = await login('QA Agente');
   const r = await api('POST', '/api/plan', { token: yo.token, body: { text: 'Somos cuatro amigos, queremos comer y después bailar' } });
   check('Agente arma una ruta', r.status === 201 || r.status === 200 ? r.data?.stops?.length >= 2 : false, r.data ? `${r.data.source}: ${r.data.stops?.map((s) => s.placeName).join(' → ')}` : String(r.status));
 }
 
-const pasos = [salud, loginPorNombre, rt1yCc3, cc1, ganadores, agente];
+const pasos = [salud, loginPorNombre, rt1yCc3, cc1, ganadores, salaSinConexion, agente];
 for (const paso of pasos) {
   try {
     await paso();
