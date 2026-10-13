@@ -52,7 +52,11 @@ async function api(method, path, { token, body } = {}) {
   return { status: res.status, data };
 }
 
-async function login(name, role = 'cliente', deviceId = `qa${rnd(14)}`) {
+/** Los nombres son únicos: cada corrida usa los suyos («QA Bot Ana 7k2p»). */
+const CORRIDA = rnd(4);
+
+async function login(nombre, role = 'cliente', deviceId = `qa${rnd(14)}`) {
+  const name = `${nombre} ${CORRIDA}`;
   const r = await api('POST', '/api/auth/login', { body: { name, role, deviceId } });
   if (r.status !== 200) throw new Error(`login ${name}: ${r.status} ${JSON.stringify(r.data)}`);
   return { token: r.data.token, user: r.data.user };
@@ -147,12 +151,17 @@ async function salud() {
 }
 
 async function loginPorNombre() {
-  const a = await login('Prueba QA');
-  check('Login solo con el nombre', !!a.token && a.user.id.startsWith('c-'), a.user.id);
   const dev = `qa${rnd(14)}`;
+  const a = await login('Prueba QA', 'cliente', dev);
+  check('Login solo con el nombre', !!a.token && a.user.id.startsWith('c-'), a.user.id);
   const b = await login('Prueba QA', 'cliente', dev);
-  const c = await login('Prueba QA', 'cliente', dev);
-  check('Mismo dispositivo = misma persona', b.user.id === c.user.id);
+  check('Mismo dispositivo = misma persona', a.user.id === b.user.id);
+  // Nombres únicos: otro navegador no puede usar el mismo nombre (ni en mayúsculas).
+  const otro = await api('POST', '/api/auth/login', { body: { name: `PRUEBA QA ${CORRIDA}`, role: 'cliente', deviceId: `qa${rnd(14)}` } });
+  check('Nombre único: otro navegador recibe NOMBRE_EN_USO', otro.status === 409 && otro.data?.code === 'NOMBRE_EN_USO', otro.data?.message);
+  // Dos nombres en el mismo navegador son dos cuentas (el caso de Casa Tequila).
+  const c = await login('Otra Persona QA', 'negocio', dev);
+  check('Mismo navegador, otro nombre = otra cuenta', c.user.id !== `n-${a.user.id.slice(2)}` && !c.user.placeId, c.user.id);
   const malo = await api('POST', '/api/auth/login', { body: { name: '<script>', role: 'cliente', deviceId: dev } });
   check('Nombre inválido rechazado', malo.status === 400, malo.data?.code);
 }
@@ -258,10 +267,36 @@ async function ganadores() {
   const antes = await api('POST', `/api/promos/${promo.data.id}/claim`, { token: a.token });
   check('Solo ganadores: sin jugar no se puede', antes.data?.code === 'SOLO_GANADORES', antes.data?.code);
 
-  // Dos bots entran a la sala de duelo. Ana se estrella a propósito; gana Beto.
+  // Los avisos de bono de Beto llegan a su tópico privado.
+  const avisosBeto = rtCliente(b.token, [`user:${b.user.id}`]);
+  await avisosBeto.abierto;
+
+  const fin = await duelo(a, b, true);
+  if (!fin) return;
+  const salaTras = ((await api('GET', '/api/salas', { token: a.token })).data?.data ?? []).find((s) => s.id === SALA);
+  check('Fin de partida: la sala queda vacía (sin revancha automática)', salaTras?.cantidadJugadores === 0, `${salaTras?.cantidadJugadores} jugadores, ${salaTras?.estado}`);
+
+  // Beto vuelve a ganar: el mismo bono no se avisa dos veces.
+  await duelo(a, b, false);
+  await sleep(1500); // promo procesa GAME.PARTIDA_FINALIZADA por el bus
+  const avisos = avisosBeto.eventos.filter((e) => e.type === 'PROMO.UNLOCKED' && e.payload?.promo?.id === promo.data.id).length;
+  avisosBeto.ws.close();
+  check('Bono: dos victorias, un solo aviso', avisos === 1, `${avisos} avisos`);
+
+  const rb = await api('POST', `/api/promos/${promo.data.id}/claim`, { token: b.token });
+  check('Solo ganadores: el ganador reclama su bono', rb.status === 200, rb.data?.code ?? rb.data?.code);
+  const ra = await api('POST', `/api/promos/${promo.data.id}/claim`, { token: a.token });
+  check('Solo ganadores: quien perdió no puede', ra.data?.code === 'SOLO_GANADORES', ra.data?.code);
+}
+
+/** Una partida de duelo entre dos bots: Ana se estrella a propósito y gana Beto. */
+async function duelo(a, b, conChecks) {
   for (const u of [a, b]) {
     const j = await api('POST', `/api/salas/${SALA}/jugadores`, { token: u.token });
-    if (j.status >= 300) return check('CC-2: entrar a la sala de duelo', false, `${j.status} ${JSON.stringify(j.data)}`);
+    if (j.status >= 300) {
+      check('CC-2: entrar a la sala de duelo', false, `${j.status} ${JSON.stringify(j.data)}`);
+      return null;
+    }
   }
   // El estado de cada tick lo publica game en el bus y llega por realtime
   // (GAME.STATE_UPDATE en salas:<id>), igual que en la app. Los comandos van por STOMP.
@@ -287,7 +322,7 @@ async function ganadores() {
   await Promise.all([conA.conectado, conB.conectado]);
   for (const c of [conA, conB]) c.send(`/app/salas/${SALA}/registrar-sesion`, {});
   const empezo = await esperar(() => enCurso, 20000);
-  check('CC-2: la partida arranca sola con la sala llena', !!empezo);
+  if (conChecks) check('CC-2: la partida arranca sola con la sala llena', !!empezo);
   // Snake continuo: las serpientes avanzan solas. Ana (nace en (4,2) mirando a
   // la derecha) gira hacia arriba y choca con el borde en 3 pasos; Beto no toca
   // nada y sigue derecho, lejos de las paredes.
@@ -298,16 +333,12 @@ async function ganadores() {
   conA.close();
   conB.close();
   rt.ws.close();
-  check('Snake continuo: la serpiente avanza sin recibir teclas', new Set(cabezasBeto).size >= 2, `${new Set(cabezasBeto).size} posiciones de Beto`);
-  check('CC-2: la partida termina con un ganador registrado', !!fin && fin.ganadorJugadorId === b.user.id, fin ? `ganó ${fin.ganadorJugadorNombre}` : 'sin resultado');
-
-  await sleep(1500); // promo procesa GAME.PARTIDA_FINALIZADA por el bus
-  const rb = await api('POST', `/api/promos/${promo.data.id}/claim`, { token: b.token });
-  check('Solo ganadores: el ganador reclama su bono', rb.status === 200, rb.data?.code ?? rb.data?.code);
-  const ra = await api('POST', `/api/promos/${promo.data.id}/claim`, { token: a.token });
-  check('Solo ganadores: quien perdió no puede', ra.data?.code === 'SOLO_GANADORES', ra.data?.code);
-  await api('DELETE', `/api/salas/${SALA}/jugadores/${a.user.id}`, { token: a.token });
-  await api('DELETE', `/api/salas/${SALA}/jugadores/${b.user.id}`, { token: b.token });
+  if (conChecks) {
+    check('Snake continuo: la serpiente avanza sin recibir teclas', new Set(cabezasBeto).size >= 2, `${new Set(cabezasBeto).size} posiciones de Beto`);
+    check('CC-2: la partida termina con un ganador registrado', !!fin && fin.ganadorJugadorId === b.user.id, fin ? `ganó ${fin.ganadorJugadorNombre}` : 'sin resultado');
+  }
+  await sleep(500);
+  return fin;
 }
 
 async function salaSinConexion() {
@@ -317,7 +348,7 @@ async function salaSinConexion() {
   const j = await api('POST', `/api/salas/${sala}/jugadores`, { token: yo.token });
   if (j.status >= 300) return check('Salas: entrar sin conexión', false, `${j.status}`);
   const adentro = async () =>
-    ((await api('GET', '/api/salas', { token: yo.token })).data?.data ?? []).find((s) => s.id === sala)?.nombresJugadores.includes('QA Fantasma');
+    ((await api('GET', '/api/salas', { token: yo.token })).data?.data ?? []).find((s) => s.id === sala)?.nombresJugadores.includes(yo.user.name);
   check('Salas: entra a la sala', await adentro());
   const inicio = Date.now();
   let sigue = true;
