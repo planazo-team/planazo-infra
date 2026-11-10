@@ -63,6 +63,11 @@
       "description": "Momento de emisión, epoch en milisegundos.",
       "type": "integer",
       "minimum": 0
+    },
+    "emittedAt": {
+      "description": "Opcional. Instante (epoch ms) en que el servicio emisor publica en el bus; hoy vale lo mismo que `at`. Realtime reemplaza `at` por el momento en que persiste el evento, pero entrega `emittedAt` intacto en los EVENT en vivo: con él se mide la latencia publicación → entrega (ESC-06, k6/esc06-latencia-tiempo-real.js).",
+      "type": "integer",
+      "minimum": 0
     }
   },
   "allOf": [
@@ -854,6 +859,11 @@
           ]
         },
         "at": {
+          "description": "Momento en que realtime persistió el evento (en los efímeros, el `at` del emisor).",
+          "$ref": "#/definitions/EpochMs"
+        },
+        "emittedAt": {
+          "description": "Opcional. El `emittedAt` del sobre tal como lo puso el emisor. Solo en `EVENT` en vivo (no en `REPLAY`) y solo si el emisor lo envió.",
           "$ref": "#/definitions/EpochMs"
         }
       }
