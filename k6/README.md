@@ -13,6 +13,7 @@ Estas pruebas son la evidencia del **Definition of Done** del proyecto (`docs/co
 | `cc3-booking-reserve.js` | CC-3 | booking | 25 usuarios reservan la misma franja con la misma `version`: cero sobreventa, se ocupan exactamente los cupos libres. |
 | `cc2-game-score.js` | CC-2 | game | 6 jugadores puntúan a la vez: el leaderboard siempre llega ordenado y ningún puntaje se pierde. **Desactualizado:** usa el protocolo anterior (`/rooms` + WebSocket `INTENT`); hay que reescribirlo al de `contracts/game.md` (REST `/api/salas`, STOMP `mover`, estado por realtime). |
 | `rt2-reconnect.js` | RT-2 | realtime | Un cliente se cae, pasan cosas, vuelve con `RESUME`: el `REPLAY` trae todo lo perdido, sin duplicados, en orden. |
+| `esc06-latencia-tiempo-real.js` | ESC-06 | realtime (+ promo, booking) | 500 clientes suscritos a `zone:zona-t` mientras `b1` lanza promos y mueve su cupo: latencia publicación → entrega p95 ≤ 300 ms, p99 ≤ 500 ms, 0 perdidos, errores < 1 %. Guía completa en [`ESC-06.md`](ESC-06.md). |
 
 Cada script obtiene sus tokens en `setup()` con `POST /api/auth/demo` usando los usuarios semilla (`u1..u6` clientes, `b1..b3` negocios). No hay que preparar nada a mano salvo tener los servicios arriba y el seed cargado.
 
@@ -55,6 +56,9 @@ k6 run -e JUGAR_S=30 -e ESPERA_HALL_S=120 k6/cc2-game-score.js
 
 k6 run k6/rt2-reconnect.js                         # topic zone:zona-g, promos como b2 (p1)
 k6 run -e ZONE=zona-t -e NEGOCIO=b1 -e PLACE_ID=p7 k6/rt2-reconnect.js
+
+k6 run k6/esc06-latencia-tiempo-real.js            # 500 clientes en zone:zona-t (ver ESC-06.md)
+k6 run -e CONEXIONES=20 -e RONDAS=5 -e RAMPA_S=3 k6/esc06-latencia-tiempo-real.js   # humo
 ```
 
 Los defaults apuntan a `BASE_URL=http://localhost:8080`, `REALTIME_URL=ws://localhost:8081/ws` y `GAME_URL=ws://localhost:8082`.

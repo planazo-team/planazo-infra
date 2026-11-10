@@ -43,9 +43,12 @@ interface RtEvent<T = unknown> {
   type: EventType;    // 'PLACE.UPDATE' | 'INV.UPDATE' | 'RESERVE.OK' | 'PROMO.PUSH' | 'PROMO.WON' | 'PROMO.EXPIRED' | 'GAME.STATE_UPDATE' | 'LOBBY.ROOMS_UPDATE' | 'GAME.PARTIDA_FINALIZADA'
   payload: T;         // ver events.schema.json
   topics: string[];
-  at: number;         // epoch ms
+  at: number;         // epoch ms: cuándo realtime lo persistió (en los efímeros, el `at` del emisor)
+  emittedAt?: number; // epoch ms: cuándo el emisor lo publicó en el bus. Solo en EVENT en vivo y si el emisor lo puso
 }
 ```
+
+> **`emittedAt` (ESC-06):** booking y promo lo ponen en el sobre al publicar y realtime lo entrega sin tocarlo. `ahora − emittedAt` en el cliente es la latencia publicación → entrega que mide `k6/esc06-latencia-tiempo-real.js`. Es opcional: quien no lo mande (game, por ahora) sigue siendo válido, y el frontend lo puede ignorar.
 
 | Mensaje | Cuándo | Qué hace el frontend |
 |---|---|---|
@@ -67,10 +70,11 @@ Consecuencia para el servidor: `RESUME` con `last_seq: 0` es válido (cliente qu
 
 ```
 booking/promo/game  --PUBLISH planazo.events--> Redis --> realtime
-                     { id, type, topics, payload, at }        │
+                     { id, type, topics, payload, at,         │
+                       emittedAt }                            │
                                                               ├─ INSERT INTO events (...)  → obtiene seq
                                                               └─ para cada conexión con topic ∩ topics ≠ ∅:
-                                                                   send { type:'EVENT', event:{ seq, id, type, payload, topics, at } }
+                                                                   send { type:'EVENT', event:{ seq, id, type, payload, topics, at, emittedAt } }
 ```
 
 `realtime` no interpreta el `payload`: solo persiste, enruta y recuerda.
