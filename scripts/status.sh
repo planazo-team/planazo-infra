@@ -30,9 +30,9 @@ check game        "$GAME_URL"
 check realtime    "$REALTIME_URL"
 echo
 
-echo "Login demo (POST $GATEWAY_URL/api/auth/demo con u1):"
+echo "Login demo (POST $GATEWAY_URL/api/auth/demo con u1; necesita DEMO_LOGIN_KEY):"
 body="$(curl -s --max-time 5 -X POST "$GATEWAY_URL/api/auth/demo" \
-  -H 'Content-Type: application/json' -d '{"userId":"u1"}' || true)"
+  -H 'Content-Type: application/json' -H "x-demo-key: ${DEMO_LOGIN_KEY:-}" -d '{"userId":"u1"}' || true)"
 if printf '%s' "$body" | grep -q '"token"'; then
   echo "  OK → token emitido (${#body} bytes)"
 else

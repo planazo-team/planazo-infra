@@ -4,7 +4,7 @@ Corto a propósito. Es un MVP académico sin registro ni contraseñas (`docs/con
 
 ## Identidad
 
-1. El frontend hace `POST /api/auth/demo { userId }` y recibe `{ token }` (JWT HS256 firmado con `JWT_SECRET`, expira en 7 días). Payload: `{ sub, name, role, placeId? }`.
+1. El frontend entra con Google: manda el ID token a `POST /api/auth/google`; el gateway lo verifica (firma con las llaves de Google, emisor, audiencia `GOOGLE_CLIENT_ID`, expiración y correo verificado) y firma el JWT de Planazo (HS256 con `JWT_SECRET`, 7 días). Payload: `{ sub, name, role, placeId? }`, con `sub` = `c-<cuenta>` en modo cliente y `n-<cuenta>` en modo negocio. El modo negocio solo se firma si la cuenta registró su negocio (NIT verificado, confirmando con Google hace menos de 10 minutos). `POST /api/auth/demo` existe solo para pruebas y exige `x-demo-key`.
 2. Todas las llamadas HTTP llevan `Authorization: Bearer <token>` al gateway.
 3. El gateway valida el JWT **una sola vez** y reenvía la identidad en headers. Los servicios HTTP **no vuelven a validar el token**: confían en los headers porque solo el gateway puede llegar a ellos (ver abajo).
 

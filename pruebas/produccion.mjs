@@ -3,10 +3,12 @@
  * Prueba de punta a punta de Planazo contra un despliegue real (Railway).
  * Node 22+ (fetch y WebSocket nativos), sin dependencias.
  *
- *   node pruebas/produccion.mjs
- *   BASE_URL=... REALTIME_URL=... GAME_WS=... node pruebas/produccion.mjs
+ *   DEMO_LOGIN_KEY=... node pruebas/produccion.mjs
+ *   DEMO_LOGIN_KEY=... BASE_URL=... REALTIME_URL=... GAME_WS=... node pruebas/produccion.mjs
  *
  * Qué demuestra:
+ *   Login  solo con Google: el login por nombre ya no existe, una credencial
+ *         falsa se rechaza y /api/auth/demo exige la llave
  *   RT-1  un cambio de cupos llega por WebSocket a quien mira la zona
  *   RT-2  al reconectar con RESUME llega lo perdido y lo nuevo sigue llegando
  *   CC-3  N reservas simultáneas con la misma versión: gana exactamente una
@@ -30,6 +32,19 @@ const SALA = process.env.SALA_DUELO ?? 'sala-006';
 const CLIENTES = Number(process.env.CLIENTES ?? 60);
 const STOCK = Number(process.env.STOCK ?? 5);
 
+
+/**
+ * Se entra únicamente con Google, así que las pruebas usan POST /api/auth/demo
+ * con la llave DEMO_LOGIN_KEY (la misma variable del gateway). Cada persona de
+ * prueba es un usuario `qa-…` distinto por corrida.
+ */
+const DEMO_KEY = process.env.DEMO_LOGIN_KEY ?? '';
+if (!DEMO_KEY) {
+  console.error('Falta DEMO_LOGIN_KEY (la misma que tiene el gateway): DEMO_LOGIN_KEY=... node pruebas/<script>.mjs');
+  process.exit(1);
+}
+const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
 const resultados = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = (n = 16) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
@@ -42,7 +57,11 @@ function check(nombre, ok, detalle = '') {
 async function api(method, path, { token, body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(path === '/api/auth/demo' ? { 'x-demo-key': DEMO_KEY } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   let data = null;
@@ -52,13 +71,13 @@ async function api(method, path, { token, body } = {}) {
   return { status: res.status, data };
 }
 
-/** Los nombres son únicos: cada corrida usa los suyos («QA Bot Ana 7k2p»). */
+/** Cada corrida usa sus propias personas de prueba («qa-qa-bot-ana-7k2p»). */
 const CORRIDA = rnd(4);
 
-async function login(nombre, role = 'cliente', deviceId = `qa${rnd(14)}`) {
+async function login(nombre, role = 'cliente') {
   const name = `${nombre} ${CORRIDA}`;
-  const r = await api('POST', '/api/auth/login', { body: { name, role, deviceId } });
-  if (r.status !== 200) throw new Error(`login ${name}: ${r.status} ${JSON.stringify(r.data)}`);
+  const r = await api('POST', '/api/auth/demo', { body: { userId: `qa-${slug(nombre)}-${CORRIDA}`, name, role } });
+  if (r.status !== 200 && r.status !== 201) throw new Error(`login ${name}: ${r.status} ${JSON.stringify(r.data)}`);
   return { token: r.data.token, user: r.data.user };
 }
 
@@ -150,20 +169,22 @@ async function salud() {
   check('Realtime arriba', r?.status === 'UP');
 }
 
-async function loginPorNombre() {
-  const dev = `qa${rnd(14)}`;
-  const a = await login('Prueba QA', 'cliente', dev);
-  check('Login solo con el nombre', !!a.token && a.user.id.startsWith('c-'), a.user.id);
-  const b = await login('Prueba QA', 'cliente', dev);
-  check('Mismo dispositivo = misma persona', a.user.id === b.user.id);
-  // Nombres únicos: otro navegador no puede usar el mismo nombre (ni en mayúsculas).
-  const otro = await api('POST', '/api/auth/login', { body: { name: `PRUEBA QA ${CORRIDA}`, role: 'cliente', deviceId: `qa${rnd(14)}` } });
-  check('Nombre único: otro navegador recibe NOMBRE_EN_USO', otro.status === 409 && otro.data?.code === 'NOMBRE_EN_USO', otro.data?.message);
-  // Dos nombres en el mismo navegador son dos cuentas (el caso de Casa Tequila).
-  const c = await login('Otra Persona QA', 'negocio', dev);
-  check('Mismo navegador, otro nombre = otra cuenta', c.user.id !== `n-${a.user.id.slice(2)}` && !c.user.placeId, c.user.id);
-  const malo = await api('POST', '/api/auth/login', { body: { name: '<script>', role: 'cliente', deviceId: dev } });
-  check('Nombre inválido rechazado', malo.status === 400, malo.data?.code);
+async function loginGoogle() {
+  const viejo = await api('POST', '/api/auth/login', { body: { name: `Prueba QA ${CORRIDA}`, role: 'cliente', deviceId: `qa${rnd(14)}` } });
+  check('El login por nombre ya no existe', viejo.status === 404, `HTTP ${viejo.status}`);
+  const sin = await api('POST', '/api/auth/google', { body: {} });
+  check('Google: sin credencial → 400', sin.status === 400, sin.data?.code);
+  const falsa = await api('POST', '/api/auth/google', { body: { credential: 'eyJhbGciOiJSUzI1NiJ9.e30.firma-falsa' } });
+  check('Google: credencial falsa → 401', falsa.status === 401 && falsa.data?.code === 'CREDENCIAL_INVALIDA', falsa.data?.code);
+  const sinLlave = await fetch(`${BASE}/api/auth/demo`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ userId: 'b1' }),
+  });
+  check('/api/auth/demo sin la llave → 401', sinLlave.status === 401, `HTTP ${sinLlave.status}`);
+  const qa = await login('Prueba QA');
+  const modo = await api('POST', '/api/auth/modo', { token: qa.token, body: { modo: 'negocio' } });
+  check('Un usuario sin cuenta de Google no cambia a modo negocio', modo.status === 403, modo.data?.code);
 }
 
 async function rt1yCc3() {
@@ -365,7 +386,7 @@ async function agente() {
   check('Agente arma una ruta', r.status === 201 || r.status === 200 ? r.data?.stops?.length >= 2 : false, r.data ? `${r.data.source}: ${r.data.stops?.map((s) => s.placeName).join(' → ')}` : String(r.status));
 }
 
-const pasos = [salud, loginPorNombre, rt1yCc3, cc1, ganadores, salaSinConexion, agente];
+const pasos = [salud, loginGoogle, rt1yCc3, cc1, ganadores, salaSinConexion, agente];
 for (const paso of pasos) {
   try {
     await paso();

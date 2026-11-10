@@ -35,10 +35,26 @@ function check(nombre, ok, detalle = '') {
 }
 const ms = (t0) => `${Math.round(performance.now() - t0)} ms`;
 
+/**
+ * Se entra únicamente con Google, así que las pruebas usan POST /api/auth/demo
+ * con la llave DEMO_LOGIN_KEY (la misma variable del gateway). Cada persona de
+ * prueba es un usuario `qa-…` distinto por corrida.
+ */
+const DEMO_KEY = process.env.DEMO_LOGIN_KEY ?? '';
+if (!DEMO_KEY) {
+  console.error('Falta DEMO_LOGIN_KEY (la misma que tiene el gateway): DEMO_LOGIN_KEY=... node pruebas/<script>.mjs');
+  process.exit(1);
+}
+const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
 async function api(method, path, { token, body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    headers: {
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(path === '/api/auth/demo' ? { 'x-demo-key': DEMO_KEY } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   let data = null;
@@ -115,15 +131,13 @@ async function main() {
   let t0 = performance.now();
   const logins = await Promise.all(
     Array.from({ length: N }, (_, i) =>
-      api('POST', '/api/auth/login', { body: { name: `Salón ${i + 1} ${CORRIDA}`, role: 'cliente', deviceId: `salon${rnd()}` } }),
+      api('POST', '/api/auth/demo', { body: { userId: `qa-salon-${i + 1}-${CORRIDA}`, name: `Salón ${i + 1} ${CORRIDA}`, role: 'cliente' } }),
     ),
   );
-  const gente = logins.filter((r) => r.status === 200).map((r) => ({ token: r.data.token, user: r.data.user }));
+  const gente = logins.filter((r) => r.status === 200 || r.status === 201).map((r) => ({ token: r.data.token, user: r.data.user }));
   check(`Entrar: ${N} personas a la vez`, gente.length === N, `${gente.length}/${N} en ${ms(t0)}`);
   const ids = new Set(gente.map((g) => g.user.id));
-  check('Entrar: cada nombre es una cuenta distinta', ids.size === N);
-  const repetido = await api('POST', '/api/auth/login', { body: { name: `salón 1 ${CORRIDA}`, role: 'cliente', deviceId: `otro${rnd()}` } });
-  check('Entrar: un nombre repetido desde otro celular se rechaza', repetido.status === 409, repetido.data?.message);
+  check('Entrar: cada persona es una cuenta distinta', ids.size === N);
 
   // conexiones en vivo de todos: su zona y su tópico privado
   const vivos = gente.map((g) => rtCliente(g.token, ['zone:zona-t', `user:${g.user.id}`]));
@@ -146,7 +160,7 @@ async function main() {
 
   t0 = performance.now();
   const reclamos = await Promise.all(gente.map((g) => api('POST', `/api/promos/${promo.data.id}/claim`, { token: g.token })));
-  const ok = reclamos.filter((r) => r.status === 200).length;
+  const ok = reclamos.filter((r) => r.status === 200 || r.status === 201).length;
   const agotadas = reclamos.filter((r) => r.data?.code === 'PROMO_AGOTADA').length;
   const errores = reclamos.filter((r) => r.status >= 500).length;
   check(`CC-1: ${N} reclaman a la vez un stock de ${STOCK}`, ok === STOCK && agotadas === N - STOCK && errores === 0, `${ok} cupones, ${agotadas} «agotada», ${errores} errores, en ${ms(t0)}`);
