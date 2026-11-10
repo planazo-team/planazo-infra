@@ -87,7 +87,10 @@ export const options = {
 const json = { headers: { 'Content-Type': 'application/json' } };
 
 function login(userId) {
-  const r = http.post(`${BASE_URL}/api/auth/demo`, JSON.stringify({ userId }), json);
+  // Se entra únicamente con Google: /api/auth/demo exige la llave DEMO_LOGIN_KEY del gateway.
+  const r = http.post(`${BASE_URL}/api/auth/demo`, JSON.stringify({ userId }), {
+    headers: { 'Content-Type': 'application/json', 'x-demo-key': __ENV.DEMO_LOGIN_KEY || '' },
+  });
   if (r.status !== 200 && r.status !== 201) throw new Error(`login ${userId} falló: HTTP ${r.status} ${r.body}`);
   return r.json('token');
 }

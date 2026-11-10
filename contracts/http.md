@@ -6,7 +6,8 @@ Reglas generales:
 
 - El frontend pide todo con prefijo `/api` al gateway (`:8080`). El gateway **quita `/api`** al reenviar; cada servicio expone sus rutas **sin** `/api`.
 - Todos los cuerpos y respuestas son JSON en **camelCase**.
-- El frontend manda `Authorization: Bearer <token>` en todas las llamadas salvo `POST /api/auth/demo`. El gateway valida el JWT y reenvía la identidad en headers (`x-user-id`, `x-user-role`, `x-user-place-id`) más `x-gateway-key` (ver `seguridad.md`).
+- Se entra únicamente con Google: `POST /api/auth/google { credential, modo? }` verifica el ID token y devuelve `{ token, user }`; `POST /api/auth/negocio/registro` activa el modo negocio (NIT verificado) y `POST /api/auth/modo` cambia de modo. `POST /api/auth/demo` queda solo para pruebas, con la llave `x-demo-key`.
+- El frontend manda `Authorization: Bearer <token>` en todas las llamadas salvo las de `/api/auth/*` que no la piden. El gateway valida el JWT y reenvía la identidad en headers (`x-user-id`, `x-user-role`, `x-user-place-id`) más `x-gateway-key` (ver `seguridad.md`).
 - Errores: cuerpo `{ code, message }`. El gateway reenvía el status tal cual. El frontend lee `code` para explicar la situación al usuario (`ErrorCode` en `types.ts`); un `409` **no es un fallo**, es criterio de aceptación.
 - Los `GET` de lectura, si fallan, el frontend los trata como lista vacía / `null`; los `POST`/`PATCH` devuelven `ApiResult` con el `code`.
 
@@ -14,7 +15,10 @@ Reglas generales:
 
 | Método | Frontend pide | Servicio recibe | Servicio | Rol | Request (camelCase exacto) | Respuesta | Errores (`code`) |
 |---|---|---|---|---|---|---|---|
-| `POST` | `/api/auth/demo` | — (lo atiende el gateway) | gateway | público | `{ userId: string }` (`u1..u6`, `b1..b3`) | `{ token: string }` | `400 USUARIO_INVALIDO` |
+| `POST` | `/api/auth/google` | — (lo atiende el gateway) | gateway | público | `{ credential: string, modo?: 'cliente' o 'negocio' }` | `{ token, user }` | `400 CREDENCIAL_INVALIDA`, `401 CREDENCIAL_INVALIDA`, `401 CORREO_NO_VERIFICADO`, `409 NEGOCIO_NO_REGISTRADO` |
+| `POST` | `/api/auth/negocio/registro` | — (gateway + booking) | gateway | público (Google de menos de 10 min) | `{ credential, legalName, nit, phone, acceptTerms }` | `{ token, user }` | `400 NIT_INVALIDO`, `400 TELEFONO_INVALIDO`, `400 TERMINOS_REQUERIDOS`, `401 CREDENCIAL_VIEJA`, `409 NIT_EN_USO` |
+| `POST` | `/api/auth/modo` | — (gateway + booking) | gateway | token | `{ modo }` | `{ token, user }` | `403 NEGOCIO_NO_REGISTRADO` |
+| `POST` | `/api/auth/demo` | — (lo atiende el gateway) | gateway | llave `x-demo-key` (solo pruebas) | `{ userId, name?, role? }` (`u1..u6`, `b1..b3` o `qa-…`) | `{ token, user }` | `400 USUARIO_INVALIDO`, `401 LLAVE_DEMO_INVALIDA`, `404` sin `DEMO_LOGIN_KEY` |
 | `GET` | `/api/places?zone=&category=` | `/places?zone=&category=` | booking | cliente/negocio | query opcional `zone: Zone`, `category: Category` | `Place[]` | — |
 | `GET` | `/api/places/:id` | `/places/:id` | booking (+ promos activas de promo) | cliente/negocio | — | `PlaceDetail` (`Place` + `slots: Slot[]`, `events: PlaceEvent[]`, `promos: Promo[]`) | `404` |
 | `POST` | `/api/reservations` | `/reservations` | booking | cliente | `{ slotId: string, people: number, version: number }` | `201` → `Reservation` | `409 VERSION_CONFLICT` (la franja cambió), `409 SIN_CUPO` |

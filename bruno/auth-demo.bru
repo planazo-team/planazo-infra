@@ -10,6 +10,10 @@ post {
   auth: none
 }
 
+headers {
+  x-demo-key: {{demoKey}}
+}
+
 body:json {
   {
     "userId": "u1"
@@ -21,6 +25,8 @@ vars:post-response {
 }
 
 docs {
-  Login de demo. Usuarios semilla: u1..u6 (cliente), b1 (p7), b2 (p1), b3 (p8) (negocio).
+  Login de demo para pruebas (el login real es solo con Google). Exige la llave
+  DEMO_LOGIN_KEY del gateway en {{demoKey}}. Usuarios semilla: u1..u6 (cliente),
+  b1 (p7), b2 (p1), b3 (p8) (negocio), o usuarios de prueba qa-<algo>.
   Guarda el token en {{token}} para las demás peticiones.
 }

@@ -14,7 +14,7 @@ Estas pruebas son la evidencia del **Definition of Done** del proyecto (`docs/co
 | `cc2-game-score.js` | CC-2 | game | 6 jugadores puntúan a la vez: el leaderboard siempre llega ordenado y ningún puntaje se pierde. **Desactualizado:** usa el protocolo anterior (`/rooms` + WebSocket `INTENT`); hay que reescribirlo al de `contracts/game.md` (REST `/api/salas`, STOMP `mover`, estado por realtime). |
 | `rt2-reconnect.js` | RT-2 | realtime | Un cliente se cae, pasan cosas, vuelve con `RESUME`: el `REPLAY` trae todo lo perdido, sin duplicados, en orden. |
 
-Cada script obtiene sus tokens en `setup()` con `POST /api/auth/demo` usando los usuarios semilla (`u1..u6` clientes, `b1..b3` negocios). No hay que preparar nada a mano salvo tener los servicios arriba y el seed cargado.
+Cada script obtiene sus tokens en `setup()` con `POST /api/auth/demo` usando los usuarios semilla (`u1..u6` clientes, `b1..b3` negocios). Como el login real es únicamente con Google, esa ruta solo existe si el gateway tiene `DEMO_LOGIN_KEY`, y hay que pasar la misma llave: `k6 run -e DEMO_LOGIN_KEY=... k6/cc1-promo-claim.js`.
 
 ## Instalar k6
 
