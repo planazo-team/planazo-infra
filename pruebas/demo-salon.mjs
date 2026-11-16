@@ -19,7 +19,14 @@
  *   6. RT-2  un celular pierde la señal y al volver recupera lo que se perdió.
  */
 
-const BASE = (process.env.BASE_URL ?? 'https://planazo-api-gateway-production.up.railway.app').replace(/\/$/, '');
+/** Solo se ensaya contra gateways conocidos: producción o uno local. */
+const BASES = ['https://planazo-api-gateway-production.up.railway.app', 'http://localhost:8080', 'http://localhost:18080'];
+const basePedida = (process.env.BASE_URL ?? BASES[0]).replace(/\/$/, '');
+const BASE = BASES.find((b) => b === basePedida);
+if (!BASE) {
+  console.error(`BASE_URL debe ser uno de: ${BASES.join(', ')}`);
+  process.exit(1);
+}
 const RT = process.env.REALTIME_URL ?? 'wss://planazo-realtime-production.up.railway.app/ws';
 const GAME_WS = (process.env.GAME_WS ?? 'wss://planazo-game-production.up.railway.app').replace(/\/$/, '') + '/ws/websocket';
 const N = Math.max(4, Number(process.env.PERSONAS ?? 4));
