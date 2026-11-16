@@ -56,22 +56,11 @@ if (!DEMO_KEY) {
 }
 const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-/**
- * La ruta se arma con ids que devuelve el servidor: cada segmento y parámetro se
- * codifica, así nunca puede salirse de la API (`..`, `/` o `?` dentro de un id).
- */
-function rutaApi(path) {
-  const u = new URL(path, 'https://planazo.invalid');
-  const ruta = u.pathname
-    .split('/')
-    .map((segmento) => encodeURIComponent(decodeURIComponent(segmento)))
-    .join('/');
-  const consulta = [...u.searchParams].map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
-  return consulta ? `${ruta}?${consulta}` : ruta;
-}
+/** Los ids vienen de respuestas del servidor: se codifican al armar la ruta. */
+const seg = (id) => encodeURIComponent(String(id));
 
 async function api(method, path, { token, body } = {}) {
-  const res = await fetch(`${BASE}${rutaApi(path)}`, {
+  const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       'content-type': 'application/json',
@@ -182,14 +171,14 @@ async function main() {
   check('RT-2: la promo le llega en vivo a todos', !!llego, `${tiempos.length}/${N}, la última en ${Math.round(Math.max(...tiempos) - t0)} ms`);
 
   t0 = performance.now();
-  const reclamos = await Promise.all(gente.map((g) => api('POST', `/api/promos/${promo.data.id}/claim`, { token: g.token })));
+  const reclamos = await Promise.all(gente.map((g) => api('POST', `/api/promos/${seg(promo.data.id)}/claim`, { token: g.token })));
   const ok = reclamos.filter((r) => r.status === 200 || r.status === 201).length;
   const agotadas = reclamos.filter((r) => r.data?.code === 'PROMO_AGOTADA').length;
   const errores = reclamos.filter((r) => r.status >= 500).length;
   check(`CC-1: ${N} reclaman a la vez un stock de ${STOCK}`, ok === STOCK && agotadas === N - STOCK && errores === 0, `${ok} cupones, ${agotadas} «agotada», ${errores} errores, en ${ms(t0)}`);
   const ganadas = await esperar(() => vivos[0].eventos.filter((e) => e.type === 'PROMO.WON' && e.payload?.promoId === promo.data.id).length >= STOCK && true, 5000);
   check('RT-2: el stock baja en vivo en los celulares', !!ganadas);
-  const otraVez = await api('POST', `/api/promos/${promo.data.id}/claim`, { token: gente[0].token });
+  const otraVez = await api('POST', `/api/promos/${seg(promo.data.id)}/claim`, { token: gente[0].token });
   check('CC-1: nadie reclama dos veces', ['YA_RECLAMADA', 'PROMO_AGOTADA'].includes(otraVez.data?.code), otraVez.data?.code);
 
   // 3. Todos pelean el mismo cupo ------------------------------------------
@@ -216,7 +205,7 @@ async function main() {
     check('CC-3: sin sobreventa', f2.taken === franja.taken + 1 && f2.taken <= f2.capacity, `ocupados ${franja.taken} → ${f2.taken} de ${f2.capacity}`);
     // deja la franja como estaba
     const quien = gente[reservas.indexOf(confirmadas[0])];
-    await api('DELETE', `/api/reservations/${confirmadas[0].data.id}`, { token: quien.token });
+    await api('DELETE', `/api/reservations/${seg(confirmadas[0].data.id)}`, { token: quien.token });
   }
 
   // 4. Duelos de Snake con bono para ganadores -----------------------------
@@ -231,19 +220,19 @@ async function main() {
   check('Snake: hay salas de duelo libres', duelos.length >= 1, `${duelos.length} duelos simultáneos`);
 
   async function jugar(d) {
-    const obs = rtCliente(d.a.token, [`salas:${d.sala}`]);
+    const obs = rtCliente(d.a.token, [`salas:${seg(d.sala)}`]);
     await obs.abierto;
     const conA = stomp(d.a.token);
     const conB = stomp(d.b.token);
     await Promise.all([conA.conectado, conB.conectado]);
     for (const u of [d.a, d.b]) {
-      const j = await api('POST', `/api/salas/${d.sala}/jugadores`, { token: u.token });
-      if (j.status >= 300) throw new Error(`entrar a ${d.sala}: ${j.status} ${JSON.stringify(j.data)}`);
+      const j = await api('POST', `/api/salas/${seg(d.sala)}/jugadores`, { token: u.token });
+      if (j.status >= 300) throw new Error(`entrar a ${seg(d.sala)}: ${j.status} ${JSON.stringify(j.data)}`);
     }
-    for (const c of [conA, conB]) c.send(`/app/salas/${d.sala}/registrar-sesion`, {});
+    for (const c of [conA, conB]) c.send(`/app/salas/${seg(d.sala)}/registrar-sesion`, {});
     const enCurso = await esperar(() => obs.eventos.some((e) => e.type === 'GAME.STATE_UPDATE' && e.payload.estado === 'EN_CURSO'), 20000);
     // A (nace mirando a la derecha) gira hacia arriba y se estrella; B sigue derecho.
-    const giro = setInterval(() => conA.send(`/app/salas/${d.sala}/mover`, { direccion: 'ARRIBA' }), 100);
+    const giro = setInterval(() => conA.send(`/app/salas/${seg(d.sala)}/mover`, { direccion: 'ARRIBA' }), 100);
     const fin = await esperar(() => obs.eventos.find((e) => e.type === 'GAME.STATE_UPDATE' && e.payload.resultado)?.payload.resultado, 60000);
     clearInterval(giro);
     await sleep(1500);
@@ -279,7 +268,7 @@ async function main() {
   await sleep(2000);
   check('Bono: volver a ganar no repite el aviso', duelos.every((d) => avisos(d.b) === 1));
 
-  const reclamosBono = await Promise.all(duelos.flatMap((d) => [d.b, d.a]).map((u) => api('POST', `/api/promos/${bono.data.id}/claim`, { token: u.token })));
+  const reclamosBono = await Promise.all(duelos.flatMap((d) => [d.b, d.a]).map((u) => api('POST', `/api/promos/${seg(bono.data.id)}/claim`, { token: u.token })));
   const okGan = reclamosBono.filter((r, k) => k % 2 === 0 && r.status === 200).length;
   const noPerd = reclamosBono.filter((r, k) => k % 2 === 1 && r.data?.code === 'SOLO_GANADORES').length;
   check('Bono: los ganadores reclaman y quienes perdieron no', okGan === duelos.length && noPerd === duelos.length, `${okGan} reclamados, ${noPerd} «solo ganadores»`);
