@@ -55,19 +55,19 @@ crear planazo-promo planazo-team/planazo-promo "$PROMO_BRANCH" \
   'REDIS_URL=${{Redis.REDIS_URL}}' \
   'BUS_URL=${{Redis.REDIS_URL}}'
 
-# La red privada de Railway (*.railway.internal) va cifrada por WireGuard entre
-# contenedores; los servicios se hablan por HTTP plano dentro de ella.
-INTERNO="http"
+# URLs de la red privada (cifrada por WireGuard): ver urls-internas.env.
+# shellcheck source=urls-internas.env
+source "$(dirname "${BASH_SOURCE[0]}")/urls-internas.env"
 
 crear planazo-api-gateway planazo-team/planazo-api-gateway main \
   NODE_ENV=production \
   PORT=8080 \
   "JWT_SECRET=$JWT_SECRET" \
   "GATEWAY_KEY=$GATEWAY_KEY" \
-  "ALLOWED_ORIGINS=$FRONTEND_URL,$INTERNO://localhost:3000" \
-  "BOOKING_URL=$INTERNO://planazo-booking.railway.internal:3001" \
-  "PROMO_URL=$INTERNO://planazo-promo.railway.internal:3002" \
-  "GAME_URL=$INTERNO://planazo-game.railway.internal:8082" \
+  "ALLOWED_ORIGINS=$FRONTEND_URL,$FRONTEND_LOCAL" \
+  "BOOKING_URL=$BOOKING_URL_INTERNA" \
+  "PROMO_URL=$PROMO_URL_INTERNA" \
+  "GAME_URL=$GAME_URL_INTERNA" \
   RATE_LIMIT_PER_MINUTE=600
 
 # Solo el gateway tiene dominio público; booking y promo se hablan por la red privada.
