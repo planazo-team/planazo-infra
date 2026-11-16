@@ -41,3 +41,21 @@ jobs:
 
       - name: Validar contracts/events.schema.json
         run: npx --yes ajv-cli@5 compile -s contracts/events.schema.json
+
+      # Escenario 5 (Mantenibilidad): análisis estático con SonarCloud en
+      # los 7 repositorios. Aquí no hay cobertura que reportar (no es un
+      # servicio de aplicación), pero sí scripts y k6 sobre los que Sonar
+      # puede señalar code smells/duplicación. No falla el build si el
+      # secret no está configurado: falta crear el proyecto en
+      # SonarCloud y guardar SONAR_TOKEN (y opcionalmente
+      # SONAR_ORGANIZATION / SONAR_PROJECT_KEY) como secret del repo.
+      - name: SonarCloud
+        if: ${{ secrets.SONAR_TOKEN != '' }}
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ secrets.SONAR_PROJECT_KEY || 'planazo-infra' }}
