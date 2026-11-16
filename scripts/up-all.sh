@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Levanta infra + los 5 servicios de aplicación construidos desde los repos hermanos.
+# Levanta infra + game (este compose) y, aparte, los 4 repos que ya tienen su
+# propio balanceador (api-gateway, booking, promo, realtime): cada uno con
+# `docker compose up --build -d` en su propio directorio.
 # Requiere que cada ../planazo-<servicio> tenga Dockerfile en su raíz.
 # Pasa `--frontend` para incluir también el frontend (necesita Dockerfile en ../planazo-frontend/frontend).
 set -euo pipefail
@@ -22,5 +24,12 @@ done
 
 docker compose "${profiles[@]}" up --build -d
 docker compose "${profiles[@]}" ps
+
+for servicio in api-gateway booking promo realtime; do
+  echo
+  echo "== ${servicio} (2 réplicas + balanceador propio) =="
+  (cd "../planazo-${servicio}" && docker compose up --build -d && docker compose ps)
+done
+
 echo
 echo "Comprueba el estado con: scripts/status.sh"
