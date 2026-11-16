@@ -40,4 +40,6 @@ jobs:
           done
 
       - name: Validar contracts/events.schema.json
-        run: npx --yes ajv-cli@5 compile -s contracts/events.schema.json
+        run: |
+          npm install --global --ignore-scripts ajv-cli@5.0.0
+          ajv compile -s contracts/events.schema.json

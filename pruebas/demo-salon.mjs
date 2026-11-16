@@ -29,9 +29,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = (n = 14) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
 const CORRIDA = rnd(4);
 const resultados = [];
+/** Lo que viene del servidor va a la consola en una sola línea: sin saltos ni caracteres de control. */
+const enUnaLinea = (texto) => String(texto).replace(/[\u0000-\u001f\u007f]+/g, ' ');
 function check(nombre, ok, detalle = '') {
   resultados.push(ok);
-  console.log(`${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`);
+  console.log(enUnaLinea(`${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`));
 }
 const ms = (t0) => `${Math.round(performance.now() - t0)} ms`;
 
@@ -47,8 +49,22 @@ if (!DEMO_KEY) {
 }
 const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+/**
+ * La ruta se arma con ids que devuelve el servidor: cada segmento y parámetro se
+ * codifica, así nunca puede salirse de la API (`..`, `/` o `?` dentro de un id).
+ */
+function rutaApi(path) {
+  const u = new URL(path, 'https://planazo.invalid');
+  const ruta = u.pathname
+    .split('/')
+    .map((segmento) => encodeURIComponent(decodeURIComponent(segmento)))
+    .join('/');
+  const consulta = [...u.searchParams].map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+  return consulta ? `${ruta}?${consulta}` : ruta;
+}
+
 async function api(method, path, { token, body } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${BASE}${rutaApi(path)}`, {
     method,
     headers: {
       'content-type': 'application/json',

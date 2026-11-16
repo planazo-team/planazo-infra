@@ -73,10 +73,10 @@ Para apagar: `scripts/down.sh` (conserva datos) o `scripts/down.sh -v` (borra vo
 | game (Java) | 8082 | http://localhost:8082 · `/actuator/health` · `/api/v1/*` · `/swagger-ui.html` · STOMP en `/ws` | `GAME_URL` del gateway (`http://localhost:8082`) y `NEXT_PUBLIC_GAME_URL` (`ws://localhost:8082`) |
 | realtime WS | 8081 | ws://localhost:8081/ws · `/health` por HTTP | `NEXT_PUBLIC_REALTIME_URL` |
 | redis | 6379 | redis://localhost:6379 | `BUS_URL`, `REDIS_URL` |
-| postgres-booking | 5433 | postgresql://booking:booking@localhost:5433/booking | `DATABASE_URL` de booking |
-| postgres-promo | 5434 | postgresql://promo:promo@localhost:5434/promo | `DATABASE_URL` de promo |
-| postgres-realtime | 5435 | postgresql://realtime:realtime@localhost:5435/realtime | `DATABASE_URL` de realtime |
-| postgres-game | 5436 | postgresql://minijuego:minijuego@localhost:5436/minijuego | `PGHOST`/`PGPORT`/... de game |
+| postgres-booking | 5433 | postgresql://booking:$PG_PASSWORD@localhost:5433/booking | `DATABASE_URL` de booking |
+| postgres-promo | 5434 | postgresql://promo:$PG_PASSWORD@localhost:5434/promo | `DATABASE_URL` de promo |
+| postgres-realtime | 5435 | postgresql://realtime:$PG_PASSWORD@localhost:5435/realtime | `DATABASE_URL` de realtime |
+| postgres-game | 5436 | postgresql://minijuego:$PG_PASSWORD@localhost:5436/minijuego | `PGHOST`/`PGPORT`/... de game |
 
 Cuando los servicios corren **con `npm run start:dev`** (fuera de Docker) usan las URLs de `localhost` de arriba en su propio `.env`. Cuando corren **dentro de compose** (`up-all.sh`) el compose les inyecta los hostnames internos (`redis`, `postgres-booking`, `http://booking:3001`, …) y los secretos de `.env`.
 

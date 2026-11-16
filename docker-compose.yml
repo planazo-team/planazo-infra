@@ -35,7 +35,7 @@ services:
     environment:
       POSTGRES_DB: booking
       POSTGRES_USER: booking
-      POSTGRES_PASSWORD: booking
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?Copia .env.example a .env y define PG_PASSWORD}
     ports:
       - "5433:5432"
     volumes:
@@ -52,7 +52,7 @@ services:
     environment:
       POSTGRES_DB: promo
       POSTGRES_USER: promo
-      POSTGRES_PASSWORD: promo
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?Copia .env.example a .env y define PG_PASSWORD}
     ports:
       - "5434:5432"
     volumes:
@@ -69,7 +69,7 @@ services:
     environment:
       POSTGRES_DB: realtime
       POSTGRES_USER: realtime
-      POSTGRES_PASSWORD: realtime
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?Copia .env.example a .env y define PG_PASSWORD}
     ports:
       - "5435:5432"
     volumes:
@@ -86,7 +86,7 @@ services:
     environment:
       POSTGRES_DB: minijuego
       POSTGRES_USER: minijuego
-      POSTGRES_PASSWORD: minijuego
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?Copia .env.example a .env y define PG_PASSWORD}
     ports:
       - "5436:5432"
     volumes:
@@ -136,7 +136,7 @@ services:
       - "3001:3001"
     environment:
       PORT: "3001"
-      DATABASE_URL: postgresql://booking:booking@postgres-booking:5432/booking   # aún no se usa: estado en memoria
+      DATABASE_URL: postgresql://booking:${PG_PASSWORD}@postgres-booking:5432/booking   # aún no se usa: estado en memoria
       BUS_URL: redis://redis:6379
       # GATEWAY_KEY viene de .env
     depends_on:
@@ -160,7 +160,7 @@ services:
       - "3002:3002"
     environment:
       PORT: "3002"
-      DATABASE_URL: postgresql://promo:promo@postgres-promo:5432/promo   # aún no se usa: promos y cupones en memoria
+      DATABASE_URL: postgresql://promo:${PG_PASSWORD}@postgres-promo:5432/promo   # aún no se usa: promos y cupones en memoria
       REDIS_URL: redis://redis:6379
       BUS_URL: redis://redis:6379
       # GATEWAY_KEY viene de .env
@@ -189,7 +189,7 @@ services:
       PGPORT: "5432"
       PGDATABASE: minijuego
       PGUSER: minijuego
-      PGPASSWORD: minijuego
+      PGPASSWORD: ${PG_PASSWORD}
       REDISHOST: redis
       REDISPORT: "6379"
       JWT_SECRETO: ${JWT_SECRET}   # el mismo secreto del gateway, con el nombre que lee game
@@ -214,7 +214,7 @@ services:
       - "8081:8081"   # WebSocket en /ws (y GET /health por HTTP en el mismo puerto)
     environment:
       PORT: "8081"
-      DATABASE_URL: postgresql://realtime:realtime@postgres-realtime:5432/realtime
+      DATABASE_URL: postgresql://realtime:${PG_PASSWORD}@postgres-realtime:5432/realtime
       BUS_URL: redis://redis:6379
       # JWT_SECRET y GATEWAY_KEY vienen de .env
     depends_on:

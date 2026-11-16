@@ -62,6 +62,7 @@
 import http from 'k6/http';
 import ws from 'k6/ws';
 import exec from 'k6/execution';
+import { randomBytes } from 'k6/crypto';
 import { check, sleep } from 'k6';
 import { Counter, Rate, Trend } from 'k6/metrics';
 import { textSummary } from 'https://jslib.k6.io/k6-summary/0.0.2/index.js';
@@ -181,7 +182,7 @@ export function setup() {
   }
 
   // Marca de la corrida: los PROMO.PUSH de esta prueba llevan `ESC-06 <run>` en el título.
-  const run = Math.random().toString(36).slice(2, 8);
+  const run = Array.from(new Uint8Array(randomBytes(3)), (b) => b.toString(16).padStart(2, '0')).join('');
   // Con RONDAS impar la capacidad queda en original + 1 y el negocio hace un PATCH más para devolverla.
   const porTipo = { 'PROMO.PUSH': RONDAS, 'PLACE.UPDATE': franja ? RONDAS + (RONDAS % 2) : 0 };
   console.log(
