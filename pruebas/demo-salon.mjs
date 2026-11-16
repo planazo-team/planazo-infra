@@ -19,7 +19,14 @@
  *   6. RT-2  un celular pierde la señal y al volver recupera lo que se perdió.
  */
 
-const BASE = (process.env.BASE_URL ?? 'https://planazo-api-gateway-production.up.railway.app').replace(/\/$/, '');
+/** Solo se ensaya contra gateways conocidos: producción o uno local. */
+const BASES = ['https://planazo-api-gateway-production.up.railway.app', 'http://localhost:8080', 'http://localhost:18080'];
+const basePedida = (process.env.BASE_URL ?? BASES[0]).replace(/\/$/, '');
+const BASE = BASES.find((b) => b === basePedida);
+if (!BASE) {
+  console.error(`BASE_URL debe ser uno de: ${BASES.join(', ')}`);
+  process.exit(1);
+}
 const RT = process.env.REALTIME_URL ?? 'wss://planazo-realtime-production.up.railway.app/ws';
 const GAME_WS = (process.env.GAME_WS ?? 'wss://planazo-game-production.up.railway.app').replace(/\/$/, '') + '/ws/websocket';
 const N = Math.max(4, Number(process.env.PERSONAS ?? 4));
@@ -29,9 +36,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = (n = 14) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
 const CORRIDA = rnd(4);
 const resultados = [];
+/** Lo que viene del servidor va a la consola en una sola línea: sin saltos ni caracteres de control. */
+const enUnaLinea = (texto) => String(texto).replace(/[\u0000-\u001f\u007f]+/g, ' ');
 function check(nombre, ok, detalle = '') {
   resultados.push(ok);
-  console.log(`${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`);
+  console.log(enUnaLinea(`${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`));
 }
 const ms = (t0) => `${Math.round(performance.now() - t0)} ms`;
 
@@ -46,6 +55,9 @@ if (!DEMO_KEY) {
   process.exit(1);
 }
 const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/** Los ids vienen de respuestas del servidor: se codifican al armar la ruta. */
+const seg = (id) => encodeURIComponent(String(id));
 
 async function api(method, path, { token, body } = {}) {
   const res = await fetch(`${BASE}${path}`, {
@@ -159,14 +171,14 @@ async function main() {
   check('RT-2: la promo le llega en vivo a todos', !!llego, `${tiempos.length}/${N}, la última en ${Math.round(Math.max(...tiempos) - t0)} ms`);
 
   t0 = performance.now();
-  const reclamos = await Promise.all(gente.map((g) => api('POST', `/api/promos/${promo.data.id}/claim`, { token: g.token })));
+  const reclamos = await Promise.all(gente.map((g) => api('POST', `/api/promos/${seg(promo.data.id)}/claim`, { token: g.token })));
   const ok = reclamos.filter((r) => r.status === 200 || r.status === 201).length;
   const agotadas = reclamos.filter((r) => r.data?.code === 'PROMO_AGOTADA').length;
   const errores = reclamos.filter((r) => r.status >= 500).length;
   check(`CC-1: ${N} reclaman a la vez un stock de ${STOCK}`, ok === STOCK && agotadas === N - STOCK && errores === 0, `${ok} cupones, ${agotadas} «agotada», ${errores} errores, en ${ms(t0)}`);
   const ganadas = await esperar(() => vivos[0].eventos.filter((e) => e.type === 'PROMO.WON' && e.payload?.promoId === promo.data.id).length >= STOCK && true, 5000);
   check('RT-2: el stock baja en vivo en los celulares', !!ganadas);
-  const otraVez = await api('POST', `/api/promos/${promo.data.id}/claim`, { token: gente[0].token });
+  const otraVez = await api('POST', `/api/promos/${seg(promo.data.id)}/claim`, { token: gente[0].token });
   check('CC-1: nadie reclama dos veces', ['YA_RECLAMADA', 'PROMO_AGOTADA'].includes(otraVez.data?.code), otraVez.data?.code);
 
   // 3. Todos pelean el mismo cupo ------------------------------------------
@@ -193,7 +205,7 @@ async function main() {
     check('CC-3: sin sobreventa', f2.taken === franja.taken + 1 && f2.taken <= f2.capacity, `ocupados ${franja.taken} → ${f2.taken} de ${f2.capacity}`);
     // deja la franja como estaba
     const quien = gente[reservas.indexOf(confirmadas[0])];
-    await api('DELETE', `/api/reservations/${confirmadas[0].data.id}`, { token: quien.token });
+    await api('DELETE', `/api/reservations/${seg(confirmadas[0].data.id)}`, { token: quien.token });
   }
 
   // 4. Duelos de Snake con bono para ganadores -----------------------------
@@ -214,7 +226,7 @@ async function main() {
     const conB = stomp(d.b.token);
     await Promise.all([conA.conectado, conB.conectado]);
     for (const u of [d.a, d.b]) {
-      const j = await api('POST', `/api/salas/${d.sala}/jugadores`, { token: u.token });
+      const j = await api('POST', `/api/salas/${seg(d.sala)}/jugadores`, { token: u.token });
       if (j.status >= 300) throw new Error(`entrar a ${d.sala}: ${j.status} ${JSON.stringify(j.data)}`);
     }
     for (const c of [conA, conB]) c.send(`/app/salas/${d.sala}/registrar-sesion`, {});
@@ -256,7 +268,7 @@ async function main() {
   await sleep(2000);
   check('Bono: volver a ganar no repite el aviso', duelos.every((d) => avisos(d.b) === 1));
 
-  const reclamosBono = await Promise.all(duelos.flatMap((d) => [d.b, d.a]).map((u) => api('POST', `/api/promos/${bono.data.id}/claim`, { token: u.token })));
+  const reclamosBono = await Promise.all(duelos.flatMap((d) => [d.b, d.a]).map((u) => api('POST', `/api/promos/${seg(bono.data.id)}/claim`, { token: u.token })));
   const okGan = reclamosBono.filter((r, k) => k % 2 === 0 && r.status === 200).length;
   const noPerd = reclamosBono.filter((r, k) => k % 2 === 1 && r.data?.code === 'SOLO_GANADORES').length;
   check('Bono: los ganadores reclaman y quienes perdieron no', okGan === duelos.length && noPerd === duelos.length, `${okGan} reclamados, ${noPerd} «solo ganadores»`);
