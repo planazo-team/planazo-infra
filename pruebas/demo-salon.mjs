@@ -220,19 +220,19 @@ async function main() {
   check('Snake: hay salas de duelo libres', duelos.length >= 1, `${duelos.length} duelos simultáneos`);
 
   async function jugar(d) {
-    const obs = rtCliente(d.a.token, [`salas:${seg(d.sala)}`]);
+    const obs = rtCliente(d.a.token, [`salas:${d.sala}`]);
     await obs.abierto;
     const conA = stomp(d.a.token);
     const conB = stomp(d.b.token);
     await Promise.all([conA.conectado, conB.conectado]);
     for (const u of [d.a, d.b]) {
       const j = await api('POST', `/api/salas/${seg(d.sala)}/jugadores`, { token: u.token });
-      if (j.status >= 300) throw new Error(`entrar a ${seg(d.sala)}: ${j.status} ${JSON.stringify(j.data)}`);
+      if (j.status >= 300) throw new Error(`entrar a ${d.sala}: ${j.status} ${JSON.stringify(j.data)}`);
     }
-    for (const c of [conA, conB]) c.send(`/app/salas/${seg(d.sala)}/registrar-sesion`, {});
+    for (const c of [conA, conB]) c.send(`/app/salas/${d.sala}/registrar-sesion`, {});
     const enCurso = await esperar(() => obs.eventos.some((e) => e.type === 'GAME.STATE_UPDATE' && e.payload.estado === 'EN_CURSO'), 20000);
     // A (nace mirando a la derecha) gira hacia arriba y se estrella; B sigue derecho.
-    const giro = setInterval(() => conA.send(`/app/salas/${seg(d.sala)}/mover`, { direccion: 'ARRIBA' }), 100);
+    const giro = setInterval(() => conA.send(`/app/salas/${d.sala}/mover`, { direccion: 'ARRIBA' }), 100);
     const fin = await esperar(() => obs.eventos.find((e) => e.type === 'GAME.STATE_UPDATE' && e.payload.resultado)?.payload.resultado, 60000);
     clearInterval(giro);
     await sleep(1500);
