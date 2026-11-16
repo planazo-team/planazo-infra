@@ -15,4 +15,14 @@ for arg in "$@"; do
   esac
 done
 
+# Escenario 4 (Disponibilidad): primero los 4 repos que ya tienen su propio
+# docker-compose.yml (2 réplicas + balanceador cada uno), y solo al final la
+# infra compartida (postgres-*/redis/planazo-net) de la que dependen.
+for servicio in api-gateway booking promo realtime; do
+  repo="../planazo-$servicio"
+  if [ -d "$repo" ]; then
+    (cd "$repo" && docker compose down --remove-orphans "${extra[@]}") || true
+  fi
+done
+
 docker compose --profile app --profile frontend down --remove-orphans "${extra[@]}"

@@ -22,5 +22,22 @@ done
 
 docker compose "${profiles[@]}" up --build -d
 docker compose "${profiles[@]}" ps
+
+# Escenario 4 (Disponibilidad): api-gateway, booking, promo y realtime ya no
+# se construyen desde este compose — cada uno trae su propio
+# docker-compose.yml (2 réplicas + balanceador Nginx). La red compartida
+# (planazo-net) y postgres-*/redis ya quedaron arriba por el comando de
+# encima; ahora se entra a cada repo hermano y se levanta ahí.
+for servicio in api-gateway booking promo realtime; do
+  repo="../planazo-$servicio"
+  if [ -d "$repo" ]; then
+    echo
+    echo "=== $servicio ($repo) ==="
+    (cd "$repo" && docker compose up --build -d && docker compose ps)
+  else
+    echo "Aviso: no encontré $repo, lo salto (¿falta clonar? scripts/clone-all.sh)." >&2
+  fi
+done
+
 echo
 echo "Comprueba el estado con: scripts/status.sh"

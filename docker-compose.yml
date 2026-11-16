@@ -1,11 +1,29 @@
 # Infraestructura local de Planazo.
 #
-#   docker compose up -d                                        → solo infra (Redis + 4 Postgres); los servicios corren con `npm run start:dev` (game con mvn)
-#   docker compose --profile app up --build -d                  → infra + los 5 servicios construidos desde los repos hermanos
+#   docker compose up -d                           → solo infra (Redis + 4 Postgres) + la red compartida; game corre con `mvn spring-boot:run`
+#   docker compose --profile app up --build -d     → infra + game (el único servicio que este compose construye)
 #   docker compose --profile app --profile frontend up --build  → además el frontend
 #
-# Los `build.context` apuntan a los repos hermanos (../planazo-<servicio>); cada uno debe tener un Dockerfile en su raíz.
-# Los secretos compartidos (JWT_SECRET, GATEWAY_KEY, ...) vienen de `.env` (copia de `.env.example`).
+# Escenario 4 (Disponibilidad): api-gateway, booking, promo y realtime YA NO
+# se construyen aquí — cada uno tiene su propio `docker-compose.yml` en su
+# propio repo (2 réplicas + su balanceador Nginx, autosuficiente). Este
+# compose solo crea la red compartida (`planazo-net`, ver abajo) a la que
+# esos 4 repos se conectan, y las bases de datos/Redis que usan. `game`
+# sigue aquí sin replicar (su estado vive en memoria por sala, ver
+# `planazo-game/ARQUITECTURA.md`). Detalle completo en
+# `ESCENARIO-04-DISPONIBILIDAD.md`.
+#
+# Los secretos compartidos (JWT_SECRET, GATEWAY_KEY, ...) vienen de `.env`
+# (copia de `.env.example`); los 4 repos que ya no están aquí también la
+# leen, con `env_file: ../planazo-infra/.env`.
+
+networks:
+  default:
+    # Nombre fijo (en vez del `planazo-infra_default` que Compose pondría
+    # solo): así api-gateway/booking/promo/realtime, cada uno con su propio
+    # `docker-compose.yml`, se conectan a esta misma red con
+    # `external: true` sin tener que adivinar el nombre.
+    name: planazo-net
 
 x-app-common: &app-common
   restart: unless-stopped
@@ -100,82 +118,10 @@ services:
   # ------------------------------------------------------------------
   # Servicios de aplicación (profile "app")
   # ------------------------------------------------------------------
-  api-gateway:
-    <<: *app-common
-    build:
-      context: ../planazo-api-gateway
-    container_name: planazo-api-gateway
-    ports:
-      - "8080:8080"
-    environment:
-      PORT: "8080"
-      BOOKING_URL: http://booking:3001
-      PROMO_URL: http://promo:3002
-      GAME_URL: http://game:8082
-      # JWT_SECRET, GATEWAY_KEY, ALLOWED_ORIGINS y ANTHROPIC_API_KEY vienen de .env
-    depends_on:
-      booking:
-        condition: service_healthy
-      promo:
-        condition: service_healthy
-      game:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 15s
-
-  booking:
-    <<: *app-common
-    build:
-      context: ../planazo-booking
-    container_name: planazo-booking
-    ports:
-      - "3001:3001"
-    environment:
-      PORT: "3001"
-      DATABASE_URL: postgresql://booking:booking@postgres-booking:5432/booking   # aún no se usa: estado en memoria
-      BUS_URL: redis://redis:6379
-      # GATEWAY_KEY viene de .env
-    depends_on:
-      postgres-booking:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 15s
-
-  promo:
-    <<: *app-common
-    build:
-      context: ../planazo-promo
-    container_name: planazo-promo
-    ports:
-      - "3002:3002"
-    environment:
-      PORT: "3002"
-      DATABASE_URL: postgresql://promo:promo@postgres-promo:5432/promo   # aún no se usa: promos y cupones en memoria
-      REDIS_URL: redis://redis:6379
-      BUS_URL: redis://redis:6379
-      # GATEWAY_KEY viene de .env
-    depends_on:
-      postgres-promo:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3002/health || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 15s
-
+  # api-gateway, booking, promo y realtime viven ahora en su propio repo
+  # (ver cabecera de este archivo): se levantan con `docker compose up` en
+  # ../planazo-<servicio>, no aquí. `scripts/up-all.sh`/`down.sh` ya hacen
+  # ese loop por ti.
   game:
     <<: *app-common
     build:
@@ -200,30 +146,6 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8082/actuator/health || exit 1"]
-      interval: 10s
-      timeout: 3s
-      retries: 6
-      start_period: 15s
-
-  realtime:
-    <<: *app-common
-    build:
-      context: ../planazo-realtime
-    container_name: planazo-realtime
-    ports:
-      - "8081:8081"   # WebSocket en /ws (y GET /health por HTTP en el mismo puerto)
-    environment:
-      PORT: "8081"
-      DATABASE_URL: postgresql://realtime:realtime@postgres-realtime:5432/realtime
-      BUS_URL: redis://redis:6379
-      # JWT_SECRET y GATEWAY_KEY vienen de .env
-    depends_on:
-      postgres-realtime:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 6
