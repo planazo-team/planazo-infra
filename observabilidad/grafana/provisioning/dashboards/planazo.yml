@@ -1,0 +1,9 @@
+apiVersion: 1
+providers:
+  - name: planazo
+    folder: Planazo
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/dashboards
