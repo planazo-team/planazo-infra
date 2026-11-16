@@ -56,8 +56,20 @@ if (!DEMO_KEY) {
 }
 const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-/** Los ids vienen de respuestas del servidor: se codifican al armar la ruta. */
-const seg = (id) => encodeURIComponent(String(id));
+/**
+ * Los ids vienen de respuestas del servidor. Lista blanca: un id solo puede tener
+ * letras, dígitos, `-` y `_`, y el segmento se arma con caracteres de este alfabeto.
+ */
+const ALFABETO_ID = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+function seg(id) {
+  const texto = String(id);
+  if (texto.length === 0 || texto.length > 64) throw new Error(`id inválido (${texto.length} caracteres)`);
+  return Array.from(texto, (c) => {
+    const i = ALFABETO_ID.indexOf(c);
+    if (i < 0) throw new Error('id con caracteres no permitidos');
+    return ALFABETO_ID[i];
+  }).join('');
+}
 
 async function api(method, path, { token, body } = {}) {
   const res = await fetch(`${BASE}${path}`, {

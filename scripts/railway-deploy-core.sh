@@ -64,7 +64,7 @@ crear planazo-api-gateway planazo-team/planazo-api-gateway main \
   PORT=8080 \
   "JWT_SECRET=$JWT_SECRET" \
   "GATEWAY_KEY=$GATEWAY_KEY" \
-  "ALLOWED_ORIGINS=$FRONTEND_URL,http://localhost:3000" \
+  "ALLOWED_ORIGINS=$FRONTEND_URL,$INTERNO://localhost:3000" \
   "BOOKING_URL=$INTERNO://planazo-booking.railway.internal:3001" \
   "PROMO_URL=$INTERNO://planazo-promo.railway.internal:3002" \
   "GAME_URL=$INTERNO://planazo-game.railway.internal:8082" \
