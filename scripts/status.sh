@@ -11,9 +11,9 @@ GAME_URL="${GAME_URL:-http://localhost:3003}"
 REALTIME_URL="${REALTIME_URL:-http://localhost:8081}"
 
 check() {
-  local name="$1" url="$2"
+  local name="$1" url="$2" ruta="${3:-/health}"
   local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url/health" || echo 000)"
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "$url$ruta" || echo 000)"
   if [ "$code" = "200" ]; then
     printf '  %-12s %-28s %s\n' "$name" "$url" "OK"
   else
@@ -23,7 +23,9 @@ check() {
 
 echo "Servicio     URL                          Estado"
 echo "----------------------------------------------------------"
-check api-gateway "$GATEWAY_URL"
+# api-gateway tiene prefijo global /api (app.setGlobalPrefix('api')): su
+# salud vive en /api/health, no en /health como los demás.
+check api-gateway "$GATEWAY_URL" /api/health
 check booking     "$BOOKING_URL"
 check promo       "$PROMO_URL"
 check game        "$GAME_URL"

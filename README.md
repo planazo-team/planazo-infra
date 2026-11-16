@@ -6,9 +6,11 @@ Este repo **no tiene código de negocio**. Tiene lo que necesita el equipo para 
 
 | Carpeta | Qué hay |
 |---|---|
-| `docker-compose.yml` | Redis + 4 Postgres siempre; los 5 servicios bajo el profile `app` (game se construye con Maven desde su Dockerfile); el frontend bajo `frontend`. |
-| `scripts/` | `clone-all`, `up`, `up-all`, `down`, `status`, `seed` y `railway-deploy-core` (crea gateway, booking y promo en Railway). Bash, funcionan en Git Bash de Windows. |
-| `k6/` | Cuatro pruebas de carga, una por reto de concurrencia/tiempo real. Son la evidencia del Definition of Done. `cc2-game-score.js` sigue el protocolo anterior del juego y hay que reescribirlo a STOMP. |
+| `docker-compose.yml` | Redis + 4 Postgres siempre; `game` bajo el profile `app` (se construye con Maven desde su Dockerfile); el frontend bajo `frontend`; la red compartida `planazo-net`. **api-gateway, booking, promo y realtime ya NO se construyen aquí** — cada uno trae su propio `docker-compose.yml` (2 réplicas + balanceador Nginx), ver `ESCENARIO-04-DISPONIBILIDAD.md`. |
+| `ESCENARIO-04-DISPONIBILIDAD.md` | El escenario de calidad de Disponibilidad completo: por qué un balanceador por repo, el fix que hizo falta en `realtime` para poder escalarlo, y cómo correr/demostrar el prototipo. |
+| `ESCENARIO-05-MANTENIBILIDAD.md` | El escenario de calidad de Mantenibilidad (SonarCloud en CI): qué ya quedó listo en código en los 7 repos y los pasos manuales que faltan (crear el proyecto en sonarcloud.io, el token, los secrets en GitHub). |
+| `scripts/` | `clone-all`, `up`, `up-all` (ahora también levanta los 4 repos con balanceador propio), `down`, `status`, `seed`, `demo-disponibilidad` (prueba de caos) y `railway-deploy-core` (crea gateway, booking y promo en Railway). Bash, funcionan en Git Bash de Windows. |
+| `k6/` | Pruebas de carga, una por reto de concurrencia/tiempo real/disponibilidad. Son la evidencia del Definition of Done. `cc2-game-score.js` sigue el protocolo anterior del juego y hay que reescribirlo a STOMP. |
 | `contracts/` | Rutas HTTP, JSON Schema de los eventos, protocolos WebSocket y modelo de seguridad. **Si esto y el frontend no coinciden, manda el frontend.** |
 | `bruno/` | Colección [Bruno](https://www.usebruno.com/) para probar el gateway a mano. |
 
@@ -28,14 +30,18 @@ Todos los repos son **hermanos**; los `build.context` del compose y los scripts 
 
 ```
 IdeaProjects/                     (o la carpeta que uses)
-├── planazo-infra/                ← este repo
+├── planazo-infra/                ← este repo (bases de datos, Redis, game, red planazo-net)
 ├── planazo-frontend/             Next.js · :3000 · el código está en frontend/
-├── planazo-api-gateway/          NestJS · :8080 · + módulo agent
-├── planazo-booking/              NestJS · :3001 · Postgres
-├── planazo-promo/                NestJS · :3002 · Postgres + Redis
-├── planazo-game/                 Java + Spring Boot · REST /api/v1 y STOMP /ws en :8082 · Postgres + Redis
-└── planazo-realtime/             NestJS · WS :8081 (/ws) · Postgres + Redis
+├── planazo-api-gateway/          NestJS · :8080 · + módulo agent · propio docker-compose.yml (2 réplicas + Nginx)
+├── planazo-booking/              NestJS · :3001 · Postgres · propio docker-compose.yml (2 réplicas + Nginx)
+├── planazo-promo/                NestJS · :3002 · Postgres + Redis · propio docker-compose.yml (2 réplicas + Nginx)
+├── planazo-game/                 Java + Spring Boot · REST /api/v1 y STOMP /ws en :8082 · Postgres + Redis · sin replicar
+└── planazo-realtime/             NestJS · WS :8081 (/ws) · Postgres + Redis · propio docker-compose.yml (2 réplicas + Nginx)
 ```
+
+api-gateway, booking, promo y realtime se conectan a la red `planazo-net`
+que crea `planazo-infra` (`external: true` en su propio compose) — por eso
+siempre hay que levantar `planazo-infra` primero.
 
 ## Inicio rápido (5 comandos)
 
@@ -46,12 +52,13 @@ scripts/clone-all.sh
 # 2 · Secretos compartidos (edita JWT_SECRET y GATEWAY_KEY; genera con `openssl rand -hex 32`)
 cp .env.example .env
 
-# 3 · Levantar la infra (Redis + 3 Postgres) y esperar a que esté healthy
+# 3 · Levantar la infra (Redis + 4 Postgres, game, la red planazo-net) y esperar a que esté healthy
 scripts/up.sh
 
 # 4 · Correr los servicios. Opción A: cada uno en su terminal, desde su repo
 #       npm install && npm run start:dev
-#     Opción B: todos en Docker desde los repos hermanos (necesitan Dockerfile)
+#     Opción B: todos en Docker — cada uno de api-gateway/booking/promo/realtime
+#       levanta sus 2 réplicas + su propio balanceador Nginx (necesitan Dockerfile)
 scripts/up-all.sh
 
 # 5 · Ver qué está arriba y probar el login demo
@@ -78,7 +85,7 @@ Para apagar: `scripts/down.sh` (conserva datos) o `scripts/down.sh -v` (borra vo
 | postgres-realtime | 5435 | postgresql://realtime:$PG_PASSWORD@localhost:5435/realtime | `DATABASE_URL` de realtime |
 | postgres-game | 5436 | postgresql://minijuego:$PG_PASSWORD@localhost:5436/minijuego | `PGHOST`/`PGPORT`/... de game |
 
-Cuando los servicios corren **con `npm run start:dev`** (fuera de Docker) usan las URLs de `localhost` de arriba en su propio `.env`. Cuando corren **dentro de compose** (`up-all.sh`) el compose les inyecta los hostnames internos (`redis`, `postgres-booking`, `http://booking:3001`, …) y los secretos de `.env`.
+Cuando los servicios corren **con `npm run start:dev`** (fuera de Docker) usan las URLs de `localhost` de arriba en su propio `.env`. Cuando corren **dentro de compose** (`up-all.sh`) cada uno de api-gateway/booking/promo/realtime arranca 2 réplicas + su propio Nginx — el puerto de host de la tabla de arriba es el del balanceador, no el de una réplica en particular. `game` sigue siendo 1 sola instancia. Ver [`ESCENARIO-04-DISPONIBILIDAD.md`](ESCENARIO-04-DISPONIBILIDAD.md).
 
 ### Variables por servicio
 
@@ -103,6 +110,8 @@ k6 run k6/cc1-promo-claim.js        # CC-1: 200 claims, stock 10 → 10 cupones 
 k6 run k6/cc3-booking-reserve.js    # CC-3: 25 reservas a la misma franja → cero sobreventa
 k6 run k6/cc2-game-score.js         # CC-2: 6 jugadores, leaderboard ordenado, Hall of Fame completo
 k6 run k6/rt2-reconnect.js          # RT-2: caída + RESUME → sin pérdida ni duplicados
+k6 run k6/esc04-disponibilidad.js   # Escenario 4: carga sostenida contra los balanceadores, <1% error
+scripts/demo-disponibilidad.sh      # Escenario 4: lo mismo + tumba una réplica a mitad de la prueba
 ```
 
 Todo parametrizado por env (`BASE_URL`, `REALTIME_URL`, `GAME_URL`, `VUS`, `STOCK`, …). Instalación, variantes, corrida contra Railway y significado de cada threshold: [`k6/README.md`](k6/README.md).
