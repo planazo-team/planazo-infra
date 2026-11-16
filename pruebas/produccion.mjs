@@ -25,51 +25,21 @@
  * cortas del negocio semilla b1 (vencen en minutos) y una partida.
  */
 
-const BASE = (process.env.BASE_URL ?? 'https://planazo-api-gateway-production.up.railway.app').replace(/\/$/, '');
-const RT = process.env.REALTIME_URL ?? 'wss://planazo-realtime-production.up.railway.app/ws';
-const GAME_WS = (process.env.GAME_WS ?? 'wss://planazo-game-production.up.railway.app').replace(/\/$/, '') + '/ws/websocket';
+import { BASE, GAME_WS, RT, enUnaLinea, pedirApi as api, rnd, rtCliente, sleep, slug } from './comun.mjs';
+
 const SALA = process.env.SALA_DUELO ?? 'sala-006';
 const CLIENTES = Number(process.env.CLIENTES ?? 60);
 const STOCK = Number(process.env.STOCK ?? 5);
 
 
-/**
- * Se entra únicamente con Google, así que las pruebas usan POST /api/auth/demo
- * con la llave DEMO_LOGIN_KEY (la misma variable del gateway). Cada persona de
- * prueba es un usuario `qa-…` distinto por corrida.
- */
-const DEMO_KEY = process.env.DEMO_LOGIN_KEY ?? '';
-if (!DEMO_KEY) {
-  console.error('Falta DEMO_LOGIN_KEY (la misma que tiene el gateway): DEMO_LOGIN_KEY=... node pruebas/<script>.mjs');
-  process.exit(1);
-}
-const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 const resultados = [];
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const rnd = (n = 16) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
 
 function check(nombre, ok, detalle = '') {
   resultados.push({ nombre, ok, detalle });
-  console.log(`${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`);
+  console.log(enUnaLinea(`${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`));
 }
 
-async function api(method, path, { token, body } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(path === '/api/auth/demo' ? { 'x-demo-key': DEMO_KEY } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {}
-  return { status: res.status, data };
-}
 
 /** Cada corrida usa sus propias personas de prueba («qa-qa-bot-ana-7k2p»). */
 const CORRIDA = rnd(4);
@@ -83,31 +53,6 @@ async function login(nombre, role = 'cliente') {
 
 /* ---------------- cliente de realtime ---------------- */
 
-function rtCliente(token, topics) {
-  const eventos = [];
-  const replays = [];
-  let lastSeq = 0;
-  const ws = new WebSocket(RT);
-  const abierto = new Promise((ok, mal) => {
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'AUTH', token }));
-      for (const t of topics) ws.send(JSON.stringify({ type: 'SUBSCRIBE', topic: t }));
-      ok();
-    };
-    ws.onerror = (e) => mal(e);
-  });
-  ws.onmessage = (m) => {
-    const msg = JSON.parse(String(m.data));
-    if (msg.type === 'EVENT') {
-      eventos.push(msg.event);
-      if (msg.event.seq > lastSeq) lastSeq = msg.event.seq;
-    } else if (msg.type === 'REPLAY') {
-      replays.push(msg.events);
-      for (const e of msg.events) if (e.seq > lastSeq) lastSeq = e.seq;
-    }
-  };
-  return { ws, eventos, replays, abierto, get lastSeq() { return lastSeq; } };
-}
 
 async function esperar(cond, ms = 8000) {
   const fin = Date.now() + ms;

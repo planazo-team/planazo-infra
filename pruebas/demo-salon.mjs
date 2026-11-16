@@ -19,73 +19,25 @@
  *   6. RT-2  un celular pierde la señal y al volver recupera lo que se perdió.
  */
 
-/** Solo se ensaya contra gateways conocidos: producción o uno local. */
-const BASES = ['https://planazo-api-gateway-production.up.railway.app', 'http://localhost:8080', 'http://localhost:18080'];
-const basePedida = (process.env.BASE_URL ?? BASES[0]).replace(/\/$/, '');
-const BASE = BASES.find((b) => b === basePedida);
-if (!BASE) {
-  console.error(`BASE_URL debe ser uno de: ${BASES.join(', ')}`);
-  process.exit(1);
-}
-const RT = process.env.REALTIME_URL ?? 'wss://planazo-realtime-production.up.railway.app/ws';
-const GAME_WS = (process.env.GAME_WS ?? 'wss://planazo-game-production.up.railway.app').replace(/\/$/, '') + '/ws/websocket';
+import { BASE, GAME_WS, enUnaLinea, pedirApi, rnd as rndBase, rtCliente, seg, sleep } from './comun.mjs';
+
 const N = Math.max(4, Number(process.env.PERSONAS ?? 4));
 const STOCK = Math.max(1, Math.floor(N / 2));
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const rnd = (n = 14) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join('');
-const CORRIDA = rnd(4);
+const CORRIDA = rndBase(4);
 const resultados = [];
-/** Lo que viene del servidor va a la consola en una sola línea: sin saltos ni caracteres de control. */
-const enUnaLinea = (texto) => String(texto).replace(/[\u0000-\u001f\u007f]+/g, ' ');
 function check(nombre, ok, detalle = '') {
   resultados.push(ok);
   console.log(enUnaLinea(`${ok ? '✅' : '❌'} ${nombre}${detalle ? ` — ${detalle}` : ''}`));
 }
 const ms = (t0) => `${Math.round(performance.now() - t0)} ms`;
 
-/**
- * Se entra únicamente con Google, así que las pruebas usan POST /api/auth/demo
- * con la llave DEMO_LOGIN_KEY (la misma variable del gateway). Cada persona de
- * prueba es un usuario `qa-…` distinto por corrida.
- */
-const DEMO_KEY = process.env.DEMO_LOGIN_KEY ?? '';
-if (!DEMO_KEY) {
-  console.error('Falta DEMO_LOGIN_KEY (la misma que tiene el gateway): DEMO_LOGIN_KEY=... node pruebas/<script>.mjs');
-  process.exit(1);
-}
-const slug = (s) => s.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-/**
- * Los ids vienen de respuestas del servidor. Lista blanca: un id solo puede tener
- * letras, dígitos, `-` y `_`, y el segmento se arma con caracteres de este alfabeto.
- */
-const ALFABETO_ID = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-function seg(id) {
-  const texto = String(id);
-  if (texto.length === 0 || texto.length > 64) throw new Error(`id inválido (${texto.length} caracteres)`);
-  return Array.from(texto, (c) => {
-    const i = ALFABETO_ID.indexOf(c);
-    if (i < 0) throw new Error('id con caracteres no permitidos');
-    return ALFABETO_ID[i];
-  }).join('');
-}
 
-async function api(method, path, { token, body } = {}) {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      'content-type': 'application/json',
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...(path === '/api/auth/demo' ? { 'x-demo-key': DEMO_KEY } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {}
-  return { status: res.status, data: data?.data ?? data };
+/** Como pedirApi, pero desenvuelve `{ data }` cuando el gateway la trae. */
+async function api(method, path, opciones) {
+  const r = await pedirApi(method, path, opciones);
+  return { status: r.status, data: r.data?.data ?? r.data };
 }
 
 async function esperar(cond, limite = 8000) {
@@ -98,31 +50,6 @@ async function esperar(cond, limite = 8000) {
   return null;
 }
 
-function rtCliente(token, topics) {
-  const eventos = [];
-  const replays = [];
-  let lastSeq = 0;
-  const ws = new WebSocket(RT);
-  const abierto = new Promise((ok, mal) => {
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'AUTH', token }));
-      for (const t of topics) ws.send(JSON.stringify({ type: 'SUBSCRIBE', topic: t }));
-      ok();
-    };
-    ws.onerror = (e) => mal(e);
-  });
-  ws.onmessage = (m) => {
-    const msg = JSON.parse(String(m.data));
-    if (msg.type === 'EVENT') {
-      eventos.push({ ...msg.event, llegada: performance.now() });
-      if (msg.event.seq > lastSeq) lastSeq = msg.event.seq;
-    } else if (msg.type === 'REPLAY') {
-      replays.push(msg.events);
-      for (const e of msg.events) if (e.seq > lastSeq) lastSeq = e.seq;
-    }
-  };
-  return { ws, eventos, replays, abierto, get lastSeq() { return lastSeq; } };
-}
 
 function stomp(token) {
   const ws = new WebSocket(GAME_WS);
