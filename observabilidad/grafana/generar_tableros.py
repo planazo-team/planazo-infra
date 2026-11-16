@@ -1,9 +1,8 @@
-"""Genera los tableros de Grafana (JSON) de planazo-infra/observabilidad/grafana/dashboards."""
+"""Genera los tableros de Grafana (JSON) en la carpeta dashboards/ junto a este script."""
 import json
 import os
-import sys
 
-SALIDA = sys.argv[1]
+SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboards")
 DS = {"type": "prometheus", "uid": "prometheus"}
 
 _id = 0

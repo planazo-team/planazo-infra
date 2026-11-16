@@ -19,4 +19,7 @@ ENV GF_AUTH_ANONYMOUS_ENABLED=true \
 COPY provisioning /etc/grafana/provisioning
 COPY dashboards /etc/grafana/dashboards
 
+# Usuario sin privilegios de la imagen oficial (uid 472).
+USER grafana
+
 EXPOSE 3000

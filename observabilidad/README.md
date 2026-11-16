@@ -22,7 +22,7 @@ game       ┘
 | `planazo-prometheus` | `observabilidad/prometheus` | 9090 | ninguno (privado) |
 | `planazo-grafana` | `observabilidad/grafana` | 3000 | público |
 
-Grafana entra sin cuenta en modo **solo lectura**: no hay formulario de login ni autenticación básica, y los tableros vienen del repo (`allowUiUpdates: false`). Para cambiar un tablero se edita `grafana/generar_tableros.py`, se corre `python generar_tableros.py dashboards` y se vuelve a desplegar.
+Grafana entra sin cuenta en modo **solo lectura**: no hay formulario de login ni autenticación básica, y los tableros vienen del repo (`allowUiUpdates: false`). Para cambiar un tablero se edita `grafana/generar_tableros.py`, se corre `python generar_tableros.py` y se vuelve a desplegar.
 
 ## Métricas por servicio
 
