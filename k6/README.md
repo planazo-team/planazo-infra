@@ -14,6 +14,7 @@ Estas pruebas son la evidencia del **Definition of Done** del proyecto (`docs/co
 | `cc2-game-score.js` | CC-2 | game | 6 jugadores puntúan a la vez: el leaderboard siempre llega ordenado y ningún puntaje se pierde. **Desactualizado:** usa el protocolo anterior (`/rooms` + WebSocket `INTENT`); hay que reescribirlo al de `contracts/game.md` (REST `/api/salas`, STOMP `mover`, estado por realtime). |
 | `rt2-reconnect.js` | RT-2 | realtime | Un cliente se cae, pasan cosas, vuelve con `RESUME`: el `REPLAY` trae todo lo perdido, sin duplicados, en orden. |
 | `esc06-latencia-tiempo-real.js` | ESC-06 | realtime (+ promo, booking) | 500 clientes suscritos a `zone:zona-t` mientras `b1` lanza promos y mueve su cupo: latencia publicación → entrega p95 ≤ 300 ms, p99 ≤ 500 ms, 0 perdidos, errores < 1 %. Guía completa en [`ESC-06.md`](ESC-06.md). |
+| `carga-en-vivo.js` | ESC-04 | api-gateway (vía `lb-gateway`) | Demo en vivo contra producción: 80 peticiones por segundo a `/api/health` durante un minuto, sin token. Imprime peticiones, fallidas (deben ser 0), latencia y el reparto entre `gateway-a` y `gateway-b`. No subir de 80/s: el gateway limita a 5000 por minuto por instancia y los 429 cuentan como ataque. |
 
 Cada script obtiene sus tokens en `setup()` con `POST /api/auth/demo` usando los usuarios semilla (`u1..u6` clientes, `b1..b3` negocios). Como el login real es únicamente con Google, esa ruta solo existe si el gateway tiene `DEMO_LOGIN_KEY`, y hay que pasar la misma llave: `k6 run -e DEMO_LOGIN_KEY=... k6/cc1-promo-claim.js`.
 
@@ -59,6 +60,9 @@ k6 run -e ZONE=zona-t -e NEGOCIO=b1 -e PLACE_ID=p7 k6/rt2-reconnect.js
 
 k6 run k6/esc06-latencia-tiempo-real.js            # 500 clientes en zone:zona-t (ver ESC-06.md)
 k6 run -e CONEXIONES=20 -e RONDAS=5 -e RAMPA_S=3 k6/esc06-latencia-tiempo-real.js   # humo
+
+k6 run k6/carga-en-vivo.js                         # producción, 80 peticiones/s durante 1 min (demo del balanceador)
+k6 run -e DURACION=15s k6/carga-en-vivo.js         # ensayo corto
 ```
 
 Los defaults apuntan a `BASE_URL=http://localhost:8080`, `REALTIME_URL=ws://localhost:8081/ws` y `GAME_URL=ws://localhost:8082`.
